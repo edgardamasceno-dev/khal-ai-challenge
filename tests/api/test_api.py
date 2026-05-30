@@ -101,3 +101,14 @@ class TestConversationApi:
         ctx.client.put(f"/conversations/{chat}/memory", json={"chave": "k", "valor": {"v": 2}})
         mem = ctx.client.get(f"/conversations/{chat}/memory").json()
         assert len(mem) == 1 and mem[0]["valor"] == {"v": 2}
+
+
+class TestKnowledgeApi:
+    def test_search_kb(self, ctx: SimpleNamespace) -> None:
+        r = ctx.client.get("/kb/search", params={"q": "como transferir a titularidade"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body[0]["slug"] == "titularidade" and body[0]["trecho"]
+
+    def test_search_sem_match(self, ctx: SimpleNamespace) -> None:
+        assert ctx.client.get("/kb/search", params={"q": "zzz nada"}).json() == []

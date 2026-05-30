@@ -22,8 +22,10 @@ from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsum
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.value_objects import CPF, Dinheiro, Telefone
 from src.interfaces.rest.app import create_app
+from src.domain.knowledge.entities import ResultadoKB
 from src.interfaces.rest.dependencies import (
     get_billing_service,
+    get_knowledge_retrieval,
     get_memory_service,
     get_outage_service,
     get_session,
@@ -34,6 +36,7 @@ from tests.unit.fakes import (
     FakeFaturaRepository,
     FakeHandoffRepository,
     FakeInterrupcaoRepository,
+    FakeKnowledgeRetrieval,
     FakeMemoriaRepository,
     FakeTitularRepository,
     FakeUnidadeRepository,
@@ -86,12 +89,16 @@ def ctx() -> Iterator[SimpleNamespace]:
     outage_svc = OutageService(FakeInterrupcaoRepository([outage]))
     ticketing = TicketingService(chamados, handoffs, titulares, uow)
     memory = MemoryService(memorias, uow)
+    knowledge = FakeKnowledgeRetrieval(
+        [ResultadoKB("titularidade", "Transferencia de titularidade", "Para transferir...", 9)]
+    )
 
     app = create_app()
     app.dependency_overrides[get_billing_service] = lambda: billing
     app.dependency_overrides[get_outage_service] = lambda: outage_svc
     app.dependency_overrides[get_ticketing_service] = lambda: ticketing
     app.dependency_overrides[get_memory_service] = lambda: memory
+    app.dependency_overrides[get_knowledge_retrieval] = lambda: knowledge
     app.dependency_overrides[get_session] = lambda: _FakeSession()
 
     with TestClient(app) as client:

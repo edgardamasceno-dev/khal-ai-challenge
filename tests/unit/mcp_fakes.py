@@ -11,7 +11,13 @@ from typing import Any
 from src.interfaces.mcp.ports import LegacyValidationError
 
 _TIPOS = {"falta_energia", "religacao", "segunda_via", "titularidade", "reclamacao"}
-_SLA = {"falta_energia": 48, "religacao": 24, "segunda_via": 48, "titularidade": 72, "reclamacao": 72}
+_SLA = {
+    "falta_energia": 48,
+    "religacao": 24,
+    "segunda_via": 48,
+    "titularidade": 72,
+    "reclamacao": 72,
+}
 
 # Telefone -> titular
 _CUSTOMERS: dict[str, dict[str, Any]] = {

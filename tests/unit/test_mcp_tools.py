@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from src.interfaces.mcp.tools import CxTools
 from tests.unit.mcp_fakes import FakeLegacyApiClient
 

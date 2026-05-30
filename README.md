@@ -42,6 +42,8 @@ make compose-up        # database (+seed) + backend + frontend + mcp-server + ga
   e `docs/specs/SPEC-002-operator-console.md`.
 - **API legada** em `http://localhost/api` — OpenAPI/Swagger em `http://localhost/api/docs`.
   Contratos: `docs/specs/SPEC-001-legacy-rest-api.md`.
+- **Base de conhecimento** (`kb/` markdown) com retrieval léxico em `GET /api/kb/search`;
+  alimenta a tool `search_knowledge_base` e a jornada J8. Ver `docs/specs/SPEC-005-knowledge-retrieval.md`.
 - **MCP server** (ferramentas do agente) em `http://localhost/mcp` — streamable-HTTP, consome
   a API legada com guardrails determinISticos. Ver `docs/specs/SPEC-003-mcp-server.md`.
   Plugue no Claude Code: `claude mcp add --transport http luz-do-vale http://localhost/mcp`.

@@ -9,6 +9,7 @@ WORKDIR /srv
 
 COPY pyproject.toml ./
 COPY src ./src
+COPY kb ./kb
 RUN pip install --no-cache-dir .
 
 EXPOSE 8000

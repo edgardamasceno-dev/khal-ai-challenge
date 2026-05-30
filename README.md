@@ -33,21 +33,22 @@ Detalhe e trade-offs em `docs/adrs/` e no contexto `../docs/09-stack-khal-ai-cha
 ## Setup rapido
 
 ```bash
-make setup          # venv + deps
-cp .env.example .env # preencher numeros de demo e chaves (fake em sandbox)
-make db-up          # postgres via docker
-make seed           # popula dados ficticios (24 meses)
-make api            # sobe a API legada
-make mcp            # sobe o MCP server
+cp .env.example .env   # numeros de demo e credenciais (fake em sandbox)
+make compose-up        # database (+seed automatico no 1o boot) + backend + gateway
 ```
 
-Pareamento do WhatsApp (Omni/Genie em sandbox) e troubleshooting em `docs/operations/runbook.md`.
+API legada (sistema simulado) disponivel em `http://localhost/api` — OpenAPI/Swagger em
+`http://localhost/api/docs`. Endpoints e contratos: `docs/specs/SPEC-001-legacy-rest-api.md`.
+Increments seguintes (MCP server, console, WhatsApp via Omni/Genie) seguem o rollout do ADR-0006.
 
 ## Qualidade
 
+Testes em Python 3.12 (unit + api dispensam banco; integration usa Postgres efemero):
+
 ```bash
-make check          # ruff + mypy + pytest
-make evals          # Agent Score (rubrica em docs/testing/eval-rubric.md)
+make test-unit          # dominio + use cases + API (repositorios fake)
+make test-integration   # repositorios contra Postgres (DATABASE_URL)
+make check              # ruff + mypy + suite completa
 ```
 
 ## Mapa de documentos

@@ -104,3 +104,15 @@ class TestHandoff:
 
     def test_telefone_desconhecido(self) -> None:
         assert _tools().request_human_handoff(DESCONHECIDO, "x")["ok"] is False
+
+
+class TestSearchKnowledgeBase:
+    def test_com_match_cita_slug(self) -> None:
+        r = _tools().search_knowledge_base("como transferir a titularidade")
+        assert r["encontrado"] is True
+        assert r["resultados"][0]["slug"] == "titularidade"
+        assert r["resultados"][0]["trecho"]
+
+    def test_sem_match(self) -> None:
+        out = _tools().search_knowledge_base("assunto totalmente inexistente zzz")
+        assert out["encontrado"] is False

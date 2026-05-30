@@ -167,3 +167,19 @@ class FakeLegacyApiClient:
         h = {"id": f"HO-{len(self.handoffs) + 1}", "status": "pendente", **payload}
         self.handoffs.append(h)
         return h
+
+    def search_kb(self, query: str) -> list[dict[str, Any]]:
+        q = query.lower()
+        artigos = {
+            "titularidade": {
+                "slug": "titularidade",
+                "titulo": "Transferencia de titularidade",
+                "trecho": "Para transferir a titularidade, apresente os documentos do titular.",
+            },
+            "religacao": {
+                "slug": "religacao",
+                "titulo": "Religacao apos corte",
+                "trecho": "Quite o debito; a religacao ocorre em ate 24h na area urbana.",
+            },
+        }
+        return [a for kw, a in artigos.items() if kw in q]

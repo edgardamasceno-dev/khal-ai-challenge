@@ -9,8 +9,14 @@ from typing import Protocol, runtime_checkable
 
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
+from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.ticketing.entities import Chamado, Handoff
+
+
+@runtime_checkable
+class KnowledgeRetrievalPort(Protocol):
+    def search(self, query: str, limit: int) -> list[ResultadoKB]: ...
 
 
 @runtime_checkable

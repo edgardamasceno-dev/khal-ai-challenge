@@ -147,3 +147,15 @@ class CxTools:
             {"chamado_id": None, "motivo": f"[{titular['nome']}] {motivo}"}
         )
         return {"ok": True, "status": res["status"]}
+
+    def search_knowledge_base(self, query: str) -> dict[str, Any]:
+        resultados = self._api.search_kb(query)
+        if not resultados:
+            return {"encontrado": False, "motivo": "Nenhum artigo encontrado para a duvida."}
+        return {
+            "encontrado": True,
+            "resultados": [
+                {"slug": r["slug"], "titulo": r["titulo"], "trecho": r["trecho"]}
+                for r in resultados
+            ],
+        }

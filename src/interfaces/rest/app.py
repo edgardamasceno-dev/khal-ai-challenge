@@ -10,7 +10,14 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from src.interfaces.rest.exception_handlers import register_exception_handlers
-from src.interfaces.rest.routers import billing, conversation, health, outage, ticketing
+from src.interfaces.rest.routers import (
+    billing,
+    conversation,
+    health,
+    knowledge,
+    outage,
+    ticketing,
+)
 
 
 def create_app() -> FastAPI:
@@ -21,7 +28,7 @@ def create_app() -> FastAPI:
         root_path="/api",
     )
     register_exception_handlers(app)
-    for module in (health, billing, outage, ticketing, conversation):
+    for module in (health, billing, outage, ticketing, conversation, knowledge):
         app.include_router(module.router)
     return app
 

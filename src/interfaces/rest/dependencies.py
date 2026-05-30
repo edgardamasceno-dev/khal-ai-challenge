@@ -4,18 +4,23 @@ via FastAPI Depends.
 
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Iterator
+from functools import lru_cache
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from src.application.ports import KnowledgeRetrievalPort
 from src.application.services import (
     BillingService,
     MemoryService,
     OutageService,
     TicketingService,
 )
+from src.config import settings
 from src.infrastructure.db import SessionLocal
+from src.infrastructure.knowledge import FilesystemKnowledgeRetrieval
 from src.infrastructure.repositories import (
     SqlAlchemyUnitOfWork,
     SqlChamadoRepository,
@@ -26,6 +31,16 @@ from src.infrastructure.repositories import (
     SqlTitularRepository,
     SqlUnidadeRepository,
 )
+
+
+@lru_cache(maxsize=1)
+def _knowledge_retrieval() -> FilesystemKnowledgeRetrieval:
+    # Carrega o kb/ uma unica vez (Strategy filesystem, ADR-0004).
+    return FilesystemKnowledgeRetrieval(pathlib.Path(settings.kb_dir))
+
+
+def get_knowledge_retrieval() -> KnowledgeRetrievalPort:
+    return _knowledge_retrieval()
 
 
 def get_session() -> Iterator[Session]:

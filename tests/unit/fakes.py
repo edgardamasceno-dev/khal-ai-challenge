@@ -8,6 +8,7 @@ import uuid
 
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
+from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.ticketing.entities import Chamado, Handoff
 
@@ -128,3 +129,17 @@ class FakeUnitOfWork:
 
     def rollback(self) -> None:
         self.rollbacks += 1
+
+
+class FakeKnowledgeRetrieval:
+    def __init__(self, resultados: list[ResultadoKB]) -> None:
+        self._res = resultados
+
+    def search(self, query: str, limit: int) -> list[ResultadoKB]:
+        q = query.lower()
+        hits = [
+            r
+            for r in self._res
+            if r.slug in q or any(t in q for t in r.titulo.lower().split())
+        ]
+        return hits[:limit]

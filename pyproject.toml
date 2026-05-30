@@ -33,6 +33,11 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # FastAPI usa chamadas (Depends/Query/...) em defaults por design.
 extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
 
+[tool.ruff.lint.per-file-ignores]
+# Mensagens de jornada / fixtures sao strings longas em pt-BR (nao quebram bem).
+"src/evals/journeys.py" = ["E501"]
+"tests/unit/test_evals.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

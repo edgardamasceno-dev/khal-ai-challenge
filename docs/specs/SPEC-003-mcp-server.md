@@ -70,4 +70,7 @@ E2E (sem TDD): cliente MCP contra o `mcp-server` no compose (direto e via gatewa
 
 ## 8. PR relacionado
 
-- Branch: `feature/SPEC-003-mcp-server`. PR a preencher ao abrir.
+- Branch: `feature/SPEC-003-mcp-server`.
+- PR #4 (em aberto): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/4
+  - TDD (6 commits): tools+port (GREEN sobre fake), wiring httpx+FastMCP, empacotamento.
+  - Suite: 86 passed; ruff e mypy estrito limpos. E2E: cliente MCP 14/14 direto e via `/mcp`.

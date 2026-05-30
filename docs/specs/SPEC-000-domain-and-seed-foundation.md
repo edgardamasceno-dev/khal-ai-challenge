@@ -45,4 +45,11 @@ Estabelecer o nucleo de dominio (Billing, Outage, Ticketing, Knowledge, Conversa
 
 ## 8. PR relacionado
 
-- A preencher ao abrir o PR (`feature/SPEC-000-domain-seed`).
+- Branch: `feature/SPEC-000-domain-seed`.
+- PR #1 (em aberto): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/1
+  - Incremento 1 (ADR-0006, passo 1): serviço `database` (Postgres 18) + schema
+    SQL + seed determinístico/idempotente via `docker compose`. Valida os
+    critérios de aceite de dados (24 faturas/UC, 1 outage ativa, sazonalidade,
+    idempotência).
+  - Pendente em incrementos seguintes: value objects completos, modelos
+    SQLAlchemy + migrações Alembic, repositórios e seed em Python.

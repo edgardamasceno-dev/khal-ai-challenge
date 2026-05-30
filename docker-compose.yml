@@ -1,0 +1,37 @@
+name: khal-ai-challenge
+
+# Incremento 1 do rollout (ADR-0006): apenas o banco + seed.
+# `docker compose up -d` -> Postgres 18 com schema e dados ficticios da
+# "Luz do Vale" carregados no primeiro boot (docker-entrypoint-initdb.d).
+# Re-seed do zero: `docker compose down -v && docker compose up -d`.
+
+services:
+  database:
+    image: postgres:18
+    container_name: khal-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-khal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khal_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-khal}
+      PGDATA: /var/lib/postgresql/data
+      # Telefones de demo expostos ao seed (.sh repassa ao psql).
+      DEMO_PHONE_PRIMARY: ${DEMO_PHONE_PRIMARY:-}
+      DEMO_PHONE_EVAL_1: ${DEMO_PHONE_EVAL_1:-}
+      DEMO_PHONE_EVAL_2: ${DEMO_PHONE_EVAL_2:-}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Schema (01) e runner do seed (02) rodam so com o volume vazio.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      # Seed em si, chamado pelo runner com os telefones do .env.
+      - ./db/seed.sql:/db/seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-khal} -d ${POSTGRES_DB:-khal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

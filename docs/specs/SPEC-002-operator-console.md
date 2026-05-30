@@ -57,4 +57,7 @@ A garantia vem do build (tsc estrito + vite) e do smoke e2e no compose.
 
 ## 8. PR relacionado
 
-- Branch: `feature/SPEC-002-operator-console`. PR a preencher ao abrir.
+- Branch: `feature/SPEC-002-operator-console`.
+- PR #3 (em aberto): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/3
+  - Console promovido do POC (5 commits graduais, sem TDD). Smoke e2e no compose:
+    SPA em `/`, API em `/api`, Ana retornando pela mesma origem.

@@ -19,10 +19,10 @@ from src.application.services import (
     TicketingService,
 )
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
+from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.value_objects import CPF, Dinheiro, Telefone
 from src.interfaces.rest.app import create_app
-from src.domain.knowledge.entities import ResultadoKB
 from src.interfaces.rest.dependencies import (
     get_billing_service,
     get_knowledge_retrieval,

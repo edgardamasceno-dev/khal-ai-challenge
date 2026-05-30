@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
+from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.value_objects import TipoChamado
 from src.domain.ticketing.entities import Chamado, Handoff
@@ -188,3 +189,14 @@ class MemoryPutRequest(BaseModel):
 class HealthDTO(BaseModel):
     status: str
     db: str
+
+
+class KbResultDTO(BaseModel):
+    slug: str
+    titulo: str
+    trecho: str
+    score: int
+
+    @classmethod
+    def from_entity(cls, r: ResultadoKB) -> KbResultDTO:
+        return cls(slug=r.slug, titulo=r.titulo, trecho=r.trecho, score=r.score)

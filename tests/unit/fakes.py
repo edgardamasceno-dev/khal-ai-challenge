@@ -137,5 +137,9 @@ class FakeKnowledgeRetrieval:
 
     def search(self, query: str, limit: int) -> list[ResultadoKB]:
         q = query.lower()
-        hits = [r for r in self._res if r.slug in q or any(t in q for t in r.titulo.lower().split())]
+        hits = [
+            r
+            for r in self._res
+            if r.slug in q or any(t in q for t in r.titulo.lower().split())
+        ]
         return hits[:limit]

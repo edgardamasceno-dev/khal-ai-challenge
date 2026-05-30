@@ -4,7 +4,8 @@ name: khal-ai-challenge
 #   1. database + seed (SPEC-000)
 #   2. backend (FastAPI) + gateway (nginx, por path /api) (SPEC-001)
 #   3. frontend (console React/Shadcn, gateway roteia "/") (SPEC-002)
-# `docker compose up -d --build` -> console em http://localhost/, API em /api.
+#   4. mcp-server (ferramentas do agente, gateway roteia "/mcp") (SPEC-003)
+# `docker compose up -d --build` -> console em /, API em /api, MCP em /mcp.
 # Re-seed do zero: `docker compose down -v && docker compose up -d --build`.
 
 services:
@@ -52,6 +53,18 @@ services:
     container_name: khal-frontend
     restart: unless-stopped
 
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: khal-mcp
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
   gateway:
     image: nginx:1.27-alpine
     container_name: khal-gateway
@@ -64,6 +77,8 @@ services:
       backend:
         condition: service_healthy
       frontend:
+        condition: service_started
+      mcp-server:
         condition: service_started
 
 volumes:

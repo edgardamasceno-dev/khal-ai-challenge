@@ -33,13 +33,16 @@ Detalhe e trade-offs em `docs/adrs/` e no contexto `../docs/09-stack-khal-ai-cha
 ## Setup rapido
 
 ```bash
-cp .env.example .env   # numeros de demo e credenciais (fake em sandbox)
-make compose-up        # database (+seed) + backend + frontend + mcp-server + gateway
+cp .env.example .env   # ajuste SEED_PERSONAS (numeros de demo) e credenciais
+make compose-up        # database + seed (one-shot) + backend + frontend + mcp-server + gateway
 ```
 
+- **Personas via `SEED_PERSONAS`** (`.env`, SPEC-006): `"Nome:telefone;..."`, de 1 a ~100.
+  O serviço `seed` (Python/SQLAlchemy, idempotente) materializa a massa; re-seed do zero:
+  `docker compose down -v && make compose-up`.
 - **Console do operador** (React/Shadcn) em `http://localhost/` — busque uma persona de
-  demo (`555199990001` Ana, `555199990002` Carlos, `555199990003` Joana). Ver `ui/README.md`
-  e `docs/specs/SPEC-002-operator-console.md`.
+  demo (default: `555199990001` Ana, `555199990002` Carlos, `555199990003` Joana). Ver
+  `ui/README.md` e `docs/specs/SPEC-002-operator-console.md`.
 - **API legada** em `http://localhost/api` — OpenAPI/Swagger em `http://localhost/api/docs`.
   Contratos: `docs/specs/SPEC-001-legacy-rest-api.md`.
 - **Base de conhecimento** (`kb/` markdown) com retrieval léxico em `GET /api/kb/search`;

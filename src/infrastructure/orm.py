@@ -8,7 +8,7 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import CHAR, Date, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import CHAR, Date, DateTime, ForeignKey, Integer, String, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -67,6 +67,30 @@ class FaturaORM(Base):
     status: Mapped[str] = mapped_column(Text)
     linha_digitavel: Mapped[str | None] = mapped_column(String(54))
     pix_copia_cola: Mapped[str | None] = mapped_column(Text)
+    emitida_em: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class LeituraORM(Base):
+    __tablename__ = "leituras"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    uc_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("unidades_consumidoras.id"))
+    mes_referencia: Mapped[str] = mapped_column(CHAR(7))
+    consumo_kwh: Mapped[int] = mapped_column(Integer)
+    data_leitura: Mapped[dt.date] = mapped_column(Date)
+
+
+class PagamentoORM(Base):
+    __tablename__ = "pagamentos"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    fatura_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("faturas.id"))
+    valor_centavos: Mapped[int] = mapped_column(Integer)
+    data_pagamento: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+    meio: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str] = mapped_column(Text)
 
 
 class InterrupcaoORM(Base):

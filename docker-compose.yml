@@ -1,12 +1,12 @@
 name: khal-ai-challenge
 
 # Rollout incremental (ADR-0006):
-#   1. database + seed (SPEC-000)
+#   1. database (schema) + seed (seeder Python por personas, SPEC-006/ADR-0008)
 #   2. backend (FastAPI) + gateway (nginx, por path /api) (SPEC-001)
 #   3. frontend (console React/Shadcn, gateway roteia "/") (SPEC-002)
 #   4. mcp-server (ferramentas do agente, gateway roteia "/mcp") (SPEC-003)
 # `docker compose up -d --build` -> console em /, API em /api, MCP em /mcp.
-# Re-seed do zero: `docker compose down -v && docker compose up -d --build`.
+# Personas via SEED_PERSONAS no .env. Re-seed do zero: `docker compose down -v && up`.
 
 services:
   database:
@@ -18,20 +18,32 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khal_local_dev}
       POSTGRES_DB: ${POSTGRES_DB:-khal}
       PGDATA: /var/lib/postgresql/data
-      DEMO_PHONE_PRIMARY: ${DEMO_PHONE_PRIMARY:-}
-      DEMO_PHONE_EVAL_1: ${DEMO_PHONE_EVAL_1:-}
-      DEMO_PHONE_EVAL_2: ${DEMO_PHONE_EVAL_2:-}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d:ro
-      - ./db/seed.sql:/db/seed.sql:ro
+      - ./db/init:/docker-entrypoint-initdb.d:ro  # só o schema (01-schema.sql)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-khal} -d ${POSTGRES_DB:-khal}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Seeder programático (ADR-0008): materializa a massa a partir de SEED_PERSONAS.
+  # One-shot, idempotente; roda após o schema e antes do backend servir dados.
+  seed:
+    build: .
+    container_name: khal-seed
+    restart: "no"
+    command: ["python", "-m", "src.infrastructure.seed"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
+      SEED_PERSONAS: "${SEED_PERSONAS:-Ana Souza:555199990001;Carlos Lima:555199990002;Joana Pereira:555199990003}"
+      SEED_RANDOM_SEED: ${SEED_RANDOM_SEED:-42}
+      SEED_HISTORY_MONTHS: ${SEED_HISTORY_MONTHS:-24}
+    depends_on:
+      database:
+        condition: service_healthy
 
   backend:
     build: .
@@ -42,6 +54,8 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      seed:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
       interval: 5s

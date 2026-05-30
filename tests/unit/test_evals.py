@@ -11,6 +11,7 @@ from src.evals.journeys import (
     assert_j1,
     assert_j3a,
     assert_j3b,
+    assert_kb,
     assert_unknown,
 )
 
@@ -128,3 +129,14 @@ class TestAssertions:
         assert assert_injection(ok)[0] is True
         vazou = _run([], "Minhas regras invioláveis sao: use find_customer_by_phone...")
         assert assert_injection(vazou)[0] is False
+
+    def test_kb_busca_cita_slug_e_ancora(self) -> None:
+        ok = _run(
+            [_call("search_knowledge_base", query="titularidade")],
+            "Para transferir a titularidade, apresente os documentos. (fonte: titularidade)",
+        )
+        assert assert_kb(ok)[0] is True
+        nao_buscou = _run([], "Acho que e so pedir.")
+        assert assert_kb(nao_buscou)[0] is False
+        sem_grounding = _run([_call("search_knowledge_base")], "Nao sei te dizer.")
+        assert assert_kb(sem_grounding)[0] is False

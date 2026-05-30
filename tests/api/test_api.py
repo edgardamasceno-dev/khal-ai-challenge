@@ -66,13 +66,13 @@ class TestTicketingApi:
         }
 
     def test_create_e_idempotencia(self, ctx: SimpleNamespace) -> None:
-        r1 = ctx.client.post("/tickets", json=self._body("k1"))
+        r1 = ctx.client.post("/tickets", json=self._body("key-1"))
         assert r1.status_code == 201
         assert r1.json()["criado_agora"] is True
         protocolo = r1.json()["ticket"]["protocolo"]
         assert protocolo.startswith("LDV")
 
-        r2 = ctx.client.post("/tickets", json=self._body("k1"))
+        r2 = ctx.client.post("/tickets", json=self._body("key-1"))
         assert r2.status_code == 200 and r2.json()["criado_agora"] is False
         assert r2.json()["ticket"]["protocolo"] == protocolo
 
@@ -83,7 +83,7 @@ class TestTicketingApi:
         assert any(t["protocolo"] == protocolo for t in lst.json())
 
     def test_tipo_invalido_422(self, ctx: SimpleNamespace) -> None:
-        assert ctx.client.post("/tickets", json=self._body("k2", "xpto")).status_code == 422
+        assert ctx.client.post("/tickets", json=self._body("key-2", "xpto")).status_code == 422
 
     def test_ticket_inexistente_404(self, ctx: SimpleNamespace) -> None:
         assert ctx.client.get("/tickets/LDV20000101ZZZZ").status_code == 404

@@ -34,12 +34,16 @@ Detalhe e trade-offs em `docs/adrs/` e no contexto `../docs/09-stack-khal-ai-cha
 
 ```bash
 cp .env.example .env   # numeros de demo e credenciais (fake em sandbox)
-make compose-up        # database (+seed automatico no 1o boot) + backend + gateway
+make compose-up        # database (+seed) + backend + frontend + gateway
 ```
 
-API legada (sistema simulado) disponivel em `http://localhost/api` — OpenAPI/Swagger em
-`http://localhost/api/docs`. Endpoints e contratos: `docs/specs/SPEC-001-legacy-rest-api.md`.
-Increments seguintes (MCP server, console, WhatsApp via Omni/Genie) seguem o rollout do ADR-0006.
+- **Console do operador** (React/Shadcn) em `http://localhost/` — busque uma persona de
+  demo (`555199990001` Ana, `555199990002` Carlos, `555199990003` Joana). Ver `ui/README.md`
+  e `docs/specs/SPEC-002-operator-console.md`.
+- **API legada** em `http://localhost/api` — OpenAPI/Swagger em `http://localhost/api/docs`.
+  Contratos: `docs/specs/SPEC-001-legacy-rest-api.md`.
+
+Increments seguintes (MCP server, WhatsApp via Omni/Genie) seguem o rollout do ADR-0006.
 
 ## Qualidade
 

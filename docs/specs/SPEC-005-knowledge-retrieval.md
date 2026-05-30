@@ -62,4 +62,7 @@ filesystem) segue o ADR-0004 - sem cascata banco/filesystem.
 
 ## 8. PR relacionado
 
-- Branch: `feature/SPEC-005-knowledge-retrieval`. PR a preencher ao abrir.
+- Branch: `feature/SPEC-005-knowledge-retrieval`.
+- PR #7 (em aberto): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/7
+  - TDD: ranking lexico, loader, REST, tool MCP, assercao J8. Suite total 115; ruff e mypy limpos.
+  - E2E: `/api/kb/search` retorna o artigo certo; J8 ao vivo PASS (chamou a tool, citou o slug, grounding) - sem LLM-juiz.

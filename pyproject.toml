@@ -1,7 +1,7 @@
 [project]
 name = "khal-ai-challenge"
-version = "0.2.0"
-description = "API REST do sistema legado (Luz do Vale) - camada de ferramentas do agente"
+version = "0.4.0"
+description = "Sistema legado (API REST) + MCP server da Luz do Vale - camada de ferramentas do agente"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1.0",
@@ -10,6 +10,8 @@ dependencies = [
   "psycopg[binary]>=3.2",
   "pydantic>=2.7",
   "pydantic-settings>=2.3",
+  "httpx>=0.27",
+  "mcp>=1.12",
 ]
 
 [project.optional-dependencies]

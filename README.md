@@ -34,7 +34,7 @@ Detalhe e trade-offs em `docs/adrs/` e no contexto `../docs/09-stack-khal-ai-cha
 
 ```bash
 cp .env.example .env   # numeros de demo e credenciais (fake em sandbox)
-make compose-up        # database (+seed) + backend + frontend + gateway
+make compose-up        # database (+seed) + backend + frontend + mcp-server + gateway
 ```
 
 - **Console do operador** (React/Shadcn) em `http://localhost/` — busque uma persona de
@@ -42,8 +42,11 @@ make compose-up        # database (+seed) + backend + frontend + gateway
   e `docs/specs/SPEC-002-operator-console.md`.
 - **API legada** em `http://localhost/api` — OpenAPI/Swagger em `http://localhost/api/docs`.
   Contratos: `docs/specs/SPEC-001-legacy-rest-api.md`.
+- **MCP server** (ferramentas do agente) em `http://localhost/mcp` — streamable-HTTP, consome
+  a API legada com guardrails determinISticos. Ver `docs/specs/SPEC-003-mcp-server.md`.
+  Plugue no Claude Code: `claude mcp add --transport http luz-do-vale http://localhost/mcp`.
 
-Increments seguintes (MCP server, WhatsApp via Omni/Genie) seguem o rollout do ADR-0006.
+Increments seguintes (agente `AGENTS.md`, WhatsApp via Omni/Genie) seguem o rollout do ADR-0006.
 
 ## Qualidade
 

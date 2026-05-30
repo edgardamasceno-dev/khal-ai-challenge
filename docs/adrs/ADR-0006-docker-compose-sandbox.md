@@ -24,7 +24,7 @@ Optamos por **um** container `sandbox` (genie+omni+nats juntos) em vez de tres s
 
 ### Hardening (mitigacoes do doc 07 viram config)
 
-- Least-privilege: so a credencial do Claude (`ANTHROPIC_API_KEY` escopada) na sandbox. Sem SSH/AWS/GitHub/npm; fake no resto.
+- Least-privilege: so a credencial do Claude na sandbox - **ver ADR-0007** (auth do Claude Code reusada; **nao** uma `ANTHROPIC_API_KEY` dedicada obrigatoria). Sem SSH/AWS/GitHub/npm; fake no resto.
 - Egress allowlist: WhatsApp + API Anthropic + `mcp`/`nats` internos.
 - Imagens pinadas/verificadas: Genie/Omni em commit fixo (cosign/attestation do Genie), sem `curl|bash` em runtime, telemetria off (`OMNI_TELEMETRY=false`, `SENTRY_DSN=`).
 - Container: non-root, `read_only` onde possivel, `cap_drop`, sem `docker.sock`, sem bind-mount sensivel do host.

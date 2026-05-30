@@ -2,8 +2,9 @@ name: khal-ai-challenge
 
 # Rollout incremental (ADR-0006):
 #   1. database + seed (SPEC-000)
-#   2. backend (FastAPI) + gateway (nginx, por path /api) -> ESTE incremento (SPEC-001)
-# `docker compose up -d --build` -> API legada em http://localhost/api/...
+#   2. backend (FastAPI) + gateway (nginx, por path /api) (SPEC-001)
+#   3. frontend (console React/Shadcn, gateway roteia "/") (SPEC-002)
+# `docker compose up -d --build` -> console em http://localhost/, API em /api.
 # Re-seed do zero: `docker compose down -v && docker compose up -d --build`.
 
 services:
@@ -46,6 +47,11 @@ services:
       timeout: 5s
       retries: 15
 
+  frontend:
+    build: ./ui
+    container_name: khal-frontend
+    restart: unless-stopped
+
   gateway:
     image: nginx:1.27-alpine
     container_name: khal-gateway
@@ -57,6 +63,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      frontend:
+        condition: service_started
 
 volumes:
   pgdata:

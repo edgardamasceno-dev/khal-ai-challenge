@@ -1,6 +1,6 @@
 # SPEC-001 - API REST do sistema legado (Luz do Vale)
 
-- Status: Draft
+- Status: Approved (merged) — PR #2
 - Versao alvo: 0.2.0 (ferramentas reais - camada de dados/acoes)
 - ADRs: ADR-0001 (Python/Pydantic), ADR-0002 (console consome OpenAPI), ADR-0006 (compose, increment 2)
 - Validado antes em POC (`poc/`, MCP-over-REST, gateway por path).

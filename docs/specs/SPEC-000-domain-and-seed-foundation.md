@@ -1,6 +1,6 @@
 # SPEC-000 - Fundacao de dominio e seed
 
-- Status: Draft
+- Status: Approved (merged) — PR #1
 - Versao alvo: 0.1.0 (fundacao; nao e o vertical slice)
 - ADRs: ADR-0001, ADR-0004, ADR-0005
 

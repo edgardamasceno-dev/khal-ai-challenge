@@ -1,6 +1,6 @@
 # SPEC-004 - Agente CX (AGENTS.md + harness de avaliacao)
 
-- Status: Draft
+- Status: Approved (merged) — PR #6
 - Versao alvo: 0.5.0 (a "cabeca" do agente)
 - ADRs: ADR-0001 (Python), ADR-0006 (compose/sandbox), ADR-0007 (runtime Claude Code, sem key)
 - Validado antes em POC (`poc/agent`, 8/8 jornadas via `claude -p` headless).

@@ -1,6 +1,6 @@
 # SPEC-005 - Base de conhecimento + search_knowledge_base
 
-- Status: Draft
+- Status: Approved (merged) — PR #7
 - Versao alvo: 0.6.0 (RAG lexico sobre a KB)
 - ADRs: ADR-0004 (retrieval lexico com Strategy), ADR-0001 (Python). **Nenhum ADR novo.**
 

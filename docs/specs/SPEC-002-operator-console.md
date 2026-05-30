@@ -1,6 +1,6 @@
 # SPEC-002 - Console do operador (UI React/Shadcn)
 
-- Status: Draft
+- Status: Approved (merged) — PR #3
 - Versao alvo: 0.3.0 (UI fina do legado)
 - ADRs: ADR-0002 (UI como console fino), ADR-0006 (compose, frontend no gateway)
 - Validado antes em POC (`poc/frontend`).

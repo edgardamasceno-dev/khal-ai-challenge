@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 from src.domain.shared.errors import InvariantError
 
@@ -98,7 +98,7 @@ class MesReferencia:
             raise InvariantError(f"MesReferencia invalido (use YYYY-MM): {self.value!r}")
 
 
-class TipoChamado(str, Enum):
+class TipoChamado(StrEnum):
     falta_energia = "falta_energia"
     religacao = "religacao"
     segunda_via = "segunda_via"

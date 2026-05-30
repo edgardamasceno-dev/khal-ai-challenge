@@ -1,6 +1,6 @@
 # SPEC-003 - MCP server (ferramentas do agente)
 
-- Status: Draft
+- Status: Approved (merged) — PR #4
 - Versao alvo: 0.4.0 (camada de ferramentas exposta ao agente)
 - ADRs: ADR-0001 (Python/Pydantic), ADR-0006 (compose, increment 4 - mcp-server). MCP-over-REST (doc 09).
 - Validado antes em POC (`poc/mcp-server`, 14/14 via cliente MCP, direto e pelo gateway).

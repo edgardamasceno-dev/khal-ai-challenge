@@ -68,5 +68,15 @@ def request_human_handoff(phone: str, motivo: str) -> dict[str, Any]:
     return _tools.request_human_handoff(phone, motivo)
 
 
+@mcp.tool()
+def search_knowledge_base(query: str) -> dict[str, Any]:
+    """Busca na base de conhecimento (duvidas 'como faco para...').
+
+    Responda fundamentado no `trecho` retornado e **cite o `slug`** da fonte.
+    Nao afirme nada fora do que a busca devolveu.
+    """
+    return _tools.search_knowledge_base(query)
+
+
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")

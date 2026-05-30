@@ -60,3 +60,9 @@ class HttpxLegacyApiClient:
         r.raise_for_status()
         data: dict[str, Any] = r.json()
         return data
+
+    def search_kb(self, query: str) -> list[dict[str, Any]]:
+        r = self._c.get("/kb/search", params={"q": query, "limit": 3})
+        r.raise_for_status()
+        data: list[dict[str, Any]] = r.json()
+        return data

@@ -174,7 +174,7 @@ class FakeLegacyApiClient:
             "titularidade": {
                 "slug": "titularidade",
                 "titulo": "Transferencia de titularidade",
-                "trecho": "Para transferir a titularidade, apresente os documentos do novo titular.",
+                "trecho": "Para transferir a titularidade, apresente os documentos do titular.",
             },
             "religacao": {
                 "slug": "religacao",

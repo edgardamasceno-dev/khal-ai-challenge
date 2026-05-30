@@ -31,3 +31,7 @@ evals/reports/*
 
 # OS
 .DS_Store
+
+# Sandbox: clones pinados (untrusted, doc 07) - NAO versionar
+sandbox/libs/
+sandbox/.pgserve-data/

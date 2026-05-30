@@ -4,21 +4,25 @@ Distribuidora ficticia **Luz do Vale** (cidade Vale do Sol/SP). Telefones vem do
 
 ## Personas
 
-### Ana Souza - `ana.souza` (persona default)
+> Desde a SPEC-006, personas vêm de `SEED_PERSONAS` (`.env`) e cada uma é derivada por
+> `perfil_de(telefone, seed)`. As três abaixo são o **default** (`.env.example`) e os
+> cenários canônicos que as journeys assumem. Persona única no `.env` → perfil rico.
+
+### Ana Souza - `ana.souza` (persona primária / default)
 
 - Residencial, classe B1. Uma UC no bairro **Jardim das Flores**.
-- Mapeada a `DEMO_PHONE_PRIMARY`. Tambem e a `DEMO_DEFAULT_PERSONA`: numero desconhecido cai nela na demo (configuravel).
+- 1ª entrada de `SEED_PERSONAS`; numero desconhecido cai nela na demo (configuravel).
 - Estado para demo: fatura do mes atual **em aberto**, uma fatura **vencida**, 24 meses de historico. **Ha uma interrupcao ativa no bairro dela** (demo de outage + notificacao proativa).
 
 ### Carlos Lima - `carlos.lima`
 
 - Comercial (padaria), classe B3. **Duas UCs** (loja + deposito) - demo de "cliente com multiplos contratos".
-- Mapeado a `DEMO_PHONE_EVAL_1`. Faturas em dia; consumo mais alto e estavel.
+- 2ª entrada de `SEED_PERSONAS`. Faturas em dia; consumo mais alto e estavel.
 
 ### Joana Pereira - `joana.pereira`
 
 - Rural, classe B2. Uma UC afastada.
-- Mapeada a `DEMO_PHONE_EVAL_2`. Historico inclui **corte e religacao** (debito quitado) - demo de jornada de religacao.
+- 3ª entrada de `SEED_PERSONAS`. Historico inclui **corte e religacao** (debito quitado) - demo de jornada de religacao.
 
 ### Cliente desconhecido
 

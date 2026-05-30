@@ -45,8 +45,11 @@ make compose-up        # database (+seed) + backend + frontend + mcp-server + ga
 - **MCP server** (ferramentas do agente) em `http://localhost/mcp` — streamable-HTTP, consome
   a API legada com guardrails determinISticos. Ver `docs/specs/SPEC-003-mcp-server.md`.
   Plugue no Claude Code: `claude mcp add --transport http luz-do-vale http://localhost/mcp`.
+- **Agente CX** em `agent/AGENTS.md` (+ `agent/mcp.config.json`) — papel, política e guardrails
+  que orquestram as tools do `/mcp`. Avaliação ao vivo (dirige `claude -p`, sem key — ADR-0007):
+  `make agent-evals` (requer o stack no ar + Claude Code autenticado). Ver `docs/specs/SPEC-004-agent-cx.md`.
 
-Increments seguintes (agente `AGENTS.md`, WhatsApp via Omni/Genie) seguem o rollout do ADR-0006.
+Increments seguintes (WhatsApp via Omni/Genie no sandbox) seguem o rollout do ADR-0006.
 
 ## Qualidade
 

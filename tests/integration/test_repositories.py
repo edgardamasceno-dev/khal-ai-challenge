@@ -5,8 +5,8 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from src.domain.ticketing.entities import Chamado, Handoff
 from src.domain.shared.value_objects import TipoChamado
+from src.domain.ticketing.entities import Chamado, Handoff
 from src.infrastructure.orm import (
     ContratoORM,
     FaturaORM,
@@ -30,12 +30,14 @@ FAT = uuid.UUID("ffff0001-0000-0000-0000-000000000001")
 
 
 def _seed(session: Session) -> None:
+    # Flush em ordem de dependencia (sem relationship(), a UoW nao ordena por FK).
     session.add(
         TitularORM(
             id=ANA, nome="Ana Souza", cpf="52998224725",
             email=None, telefone_principal="555199990001", persona_key="ana.souza",
         )
     )
+    session.flush()
     session.add(
         UnidadeORM(
             id=UC, numero_uc="100000001", titular_id=ANA, logradouro="Rua X",
@@ -43,6 +45,7 @@ def _seed(session: Session) -> None:
             classe="residencial", subgrupo="B1", status="ativa",
         )
     )
+    session.flush()
     session.add(
         ContratoORM(
             id=uuid.uuid4(), titular_id=ANA, uc_id=UC, modalidade="convencional",

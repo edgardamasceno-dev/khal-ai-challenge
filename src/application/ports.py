@@ -1,0 +1,65 @@
+"""Ports (interfaces) da aplicacao. Adapters concretos vivem em
+infrastructure/. Repository pattern + Unit of Work.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Protocol, runtime_checkable
+
+from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
+from src.domain.conversation.entities import MemoriaConversa
+from src.domain.outage.entities import Interrupcao
+from src.domain.ticketing.entities import Chamado, Handoff
+
+
+@runtime_checkable
+class TitularRepository(Protocol):
+    def find_by_phone(self, telefone: str) -> Titular | None: ...
+    def get(self, titular_id: uuid.UUID) -> Titular | None: ...
+    def list_contratos(self, titular_id: uuid.UUID) -> list[Contrato]: ...
+
+
+@runtime_checkable
+class UnidadeRepository(Protocol):
+    def get(self, uc_id: uuid.UUID) -> UnidadeConsumidora | None: ...
+
+
+@runtime_checkable
+class FaturaRepository(Protocol):
+    def list_for_unidade(
+        self, uc_id: uuid.UUID, status: str | None, limit: int
+    ) -> list[Fatura]: ...
+    def get(self, fatura_id: uuid.UUID) -> Fatura | None: ...
+
+
+@runtime_checkable
+class InterrupcaoRepository(Protocol):
+    def find_ativa_por_regiao(
+        self, bairro: str, cidade: str | None, uf: str | None
+    ) -> Interrupcao | None: ...
+
+
+@runtime_checkable
+class ChamadoRepository(Protocol):
+    def get_by_protocolo(self, protocolo: str) -> Chamado | None: ...
+    def get_by_idempotency_key(self, key: str) -> Chamado | None: ...
+    def list_for_titular(self, titular_id: uuid.UUID) -> list[Chamado]: ...
+    def add(self, chamado: Chamado, idempotency_key: str) -> Chamado: ...
+
+
+@runtime_checkable
+class HandoffRepository(Protocol):
+    def add(self, handoff: Handoff) -> Handoff: ...
+
+
+@runtime_checkable
+class MemoriaRepository(Protocol):
+    def list_for_chat(self, chat_id: str) -> list[MemoriaConversa]: ...
+    def upsert(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa: ...
+
+
+@runtime_checkable
+class UnitOfWork(Protocol):
+    def commit(self) -> None: ...
+    def rollback(self) -> None: ...

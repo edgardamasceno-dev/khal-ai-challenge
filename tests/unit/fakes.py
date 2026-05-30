@@ -44,7 +44,11 @@ class FakeFaturaRepository:
         self._items = list(faturas or [])
 
     def list_for_unidade(self, uc_id: uuid.UUID, status: str | None, limit: int) -> list[Fatura]:
-        out = [f for f in self._items if f.uc_id == uc_id and (status is None or f.status == status)]
+        out = [
+            f
+            for f in self._items
+            if f.uc_id == uc_id and (status is None or f.status == status)
+        ]
         return out[:limit]
 
     def get(self, fatura_id: uuid.UUID) -> Fatura | None:

@@ -67,3 +67,10 @@ Distribuidora ficticia **Luz do Vale** (cidade Vale do Sol/SP). Telefones vem do
 
 1. Demanda fora do que o agente resolve.
 2. `request_human_handoff` -> item na fila do console; operador assume e responde.
+
+### J8 - Duvida na base de conhecimento (RAG)
+
+1. Cliente: "Como faco para transferir a titularidade da conta?".
+2. `search_knowledge_base` consulta a KB (`kb/` markdown, retrieval lexico - ADR-0004).
+3. Agente responde fundamentado no trecho recuperado e **cita o `slug` da fonte**;
+   nao inventa fora do que a KB retornou (guardrail anti-alucinacao).

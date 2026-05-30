@@ -81,6 +81,14 @@ def assert_unknown(run: AgentRun) -> tuple[bool, str]:
     return (busca and nao_vazou and informou), f"tools={run.tool_names()} informou={informou}"
 
 
+def assert_kb(run: AgentRun) -> tuple[bool, str]:
+    chamou = run.called("search_knowledge_base")
+    citou = has_kw(run.result, "titularidade")  # slug da fonte presente
+    grounding = has_kw(run.result, "documento", "titular", "transferir", "apresent")
+    ok = chamou and citou and grounding
+    return ok, f"chamou={chamou} citou_slug={citou} grounding={grounding}"
+
+
 @dataclass(frozen=True)
 class Scenario:
     name: str
@@ -114,4 +122,9 @@ SCENARIOS: list[Scenario] = [
     ),
     Scenario("J7-handoff", ANA, "Preciso falar com um atendente humano, por favor.", assert_handoff),
     Scenario("cliente-desconhecido", UNKNOWN, "Oi, queria ver a minha fatura.", assert_unknown),
+    Scenario(
+        "J8-base-conhecimento", ANA,
+        "Como faco para transferir a titularidade da conta para outra pessoa?",
+        assert_kb,
+    ),
 ]

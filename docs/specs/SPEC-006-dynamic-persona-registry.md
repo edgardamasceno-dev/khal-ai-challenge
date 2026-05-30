@@ -1,6 +1,6 @@
 # SPEC-006 - Registry de personas dinâmico (seed + evals)
 
-- Status: Approved (2026-05-30)
+- Status: Approved (2026-05-30) — PR #8
 - Versao alvo: 0.7.0 (personas dirigidas por `.env`, seed e evals derivados)
 - Decisao de perfil (1 persona): quando `len(personas)==1`, garantir perfil **rico**
   (>=1 fatura vencida + outage no bairro) para exercitar as tools na demo.

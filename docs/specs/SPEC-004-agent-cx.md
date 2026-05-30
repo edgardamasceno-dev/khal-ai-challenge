@@ -59,4 +59,7 @@ por **TDD**. O `agent/` e o payload que o container `sandbox` (increment 5) mont
 
 ## 8. PR relacionado
 
-- Branch: `feature/SPEC-004-agent`. PR a preencher ao abrir.
+- Branch: `feature/SPEC-004-agent`.
+- PR #6 (em aberto): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/6
+  - TDD no harness (parser + assercoes): 11 testes; suite total 97; ruff e mypy limpos.
+  - Eval ao vivo (`claude -p` contra `/mcp`): 8/8 jornadas (J1, J2, J3, J6 injection/cruzado, J7, desconhecido).

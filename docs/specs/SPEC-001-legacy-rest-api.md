@@ -54,4 +54,9 @@ Endpoints (cada um alimenta uma tool MCP):
 
 ## 8. PR relacionado
 
-- Branch: `feature/SPEC-001-legacy-rest-api`. PR a preencher ao abrir.
+- Branch: `feature/SPEC-001-legacy-rest-api`.
+- PR #2 (em aberto): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/2
+  - Implementacao via TDD (13 commits): VOs, entidades/use cases, infraestrutura
+    (ORM+repos), borda REST e empacotamento (backend+gateway no compose).
+  - Suite: 67 passed (unit+api+integration); ruff e mypy estrito limpos; 32
+    asserts e2e no compose real.

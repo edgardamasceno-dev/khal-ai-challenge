@@ -1,9 +1,10 @@
 name: khal-ai-challenge
 
-# Incremento 1 do rollout (ADR-0006): apenas o banco + seed.
-# `docker compose up -d` -> Postgres 18 com schema e dados ficticios da
-# "Luz do Vale" carregados no primeiro boot (docker-entrypoint-initdb.d).
-# Re-seed do zero: `docker compose down -v && docker compose up -d`.
+# Rollout incremental (ADR-0006):
+#   1. database + seed (SPEC-000)
+#   2. backend (FastAPI) + gateway (nginx, por path /api) -> ESTE incremento (SPEC-001)
+# `docker compose up -d --build` -> API legada em http://localhost/api/...
+# Re-seed do zero: `docker compose down -v && docker compose up -d --build`.
 
 services:
   database:
@@ -15,7 +16,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khal_local_dev}
       POSTGRES_DB: ${POSTGRES_DB:-khal}
       PGDATA: /var/lib/postgresql/data
-      # Telefones de demo expostos ao seed (.sh repassa ao psql).
       DEMO_PHONE_PRIMARY: ${DEMO_PHONE_PRIMARY:-}
       DEMO_PHONE_EVAL_1: ${DEMO_PHONE_EVAL_1:-}
       DEMO_PHONE_EVAL_2: ${DEMO_PHONE_EVAL_2:-}
@@ -23,15 +23,40 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Schema (01) e runner do seed (02) rodam so com o volume vazio.
       - ./db/init:/docker-entrypoint-initdb.d:ro
-      # Seed em si, chamado pelo runner com os telefones do .env.
       - ./db/seed.sql:/db/seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-khal} -d ${POSTGRES_DB:-khal}"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  backend:
+    build: .
+    container_name: khal-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: khal-gateway
+    restart: unless-stopped
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${GATEWAY_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   pgdata:

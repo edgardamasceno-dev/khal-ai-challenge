@@ -1,4 +1,4 @@
-.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down
+.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down agent-evals
 
 setup:
 	python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
@@ -28,3 +28,8 @@ compose-up:
 
 compose-down:
 	docker compose down
+
+# Eval ao vivo do agente: dirige `claude -p` (sem key, ADR-0007) contra o /mcp.
+# Requer o stack no ar (make compose-up) e o Claude Code autenticado.
+agent-evals:
+	python -m src.evals.run

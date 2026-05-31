@@ -90,9 +90,15 @@ export interface Handoff {
   criado_em: string
 }
 
+export interface ComponentHealth {
+  name: string // api | whatsapp | agente
+  status: string // ok | down | unknown
+}
+
 export interface Health {
   status: string
   db: string
+  components: ComponentHealth[]
 }
 
 export class ApiError extends Error {

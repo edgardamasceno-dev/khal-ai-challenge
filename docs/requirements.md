@@ -23,7 +23,7 @@ Dominio: atendimento de CX de uma distribuidora de energia ficticia ("Luz do Val
 | ID | Requisito |
 | --- | --- |
 | RNF-01 | **Execucao reprodutivel e 100% containerizada** via `docker compose` (rollout gradual, ver ADR-0006). |
-| RNF-02 | **Least-privilege**: agente roda em sandbox isolada; so a credencial do Claude; sem segredos reais fora do escopo (ver ADR-0006, doc 07). |
+| RNF-02 | **Least-privilege**: agente roda em sandbox isolada; so a credencial do **Claude Code** (auth reusada, sem key dedicada - ver ADR-0007); sem segredos reais fora do escopo (ver ADR-0006, doc 07). |
 | RNF-03 | **Isolamento**: o agente so alcanca o negocio via MCP (com guardrails); sem acesso direto a banco/storage. |
 | RNF-04 | **Observabilidade**: logs JSON com `traceId`, `chatId`, `toolName`, `latencyMs`, `resultStatus`; auditoria de tool calls. |
 | RNF-05 | **Seguranca/PII**: sem PII real; redacao de segredos em log; validacao de input em toda ferramenta/endpoint (ver docs/security). |
@@ -35,5 +35,5 @@ Dominio: atendimento de CX de uma distribuidora de energia ficticia ("Luz do Val
 
 ## Rastreabilidade
 
-- ADRs: `docs/adrs/`. RNF-01/02/03 -> ADR-0006; RF-04 -> ADR-0003; RF-08 -> ADR-0004; RF-10/RF-11 -> ADR-0005.
+- ADRs: `docs/adrs/`. RNF-01/02/03 -> ADR-0006; RNF-02 (credencial) -> ADR-0007; RF-04 -> ADR-0003; RF-08 -> ADR-0004; RF-10/RF-11 -> ADR-0005.
 - SPECs: `docs/specs/` linkam RF/RNF cobertos e o PR correspondente.

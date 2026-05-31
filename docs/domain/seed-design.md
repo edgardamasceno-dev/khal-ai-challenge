@@ -2,25 +2,33 @@
 
 Objetivo: massa ficticia mas realista, **determinística** e re-executavel, que sustente todas as jornadas (`personas-journeys.md`) e os cenarios de eval.
 
+> **Atualizado pela SPEC-006 / ADR-0008.** O seed é **programático** (Python/SQLAlchemy,
+> `python -m src.infrastructure.seed`), não mais SQL estático. Personas vêm de `SEED_PERSONAS`
+> e cada uma ganha um **perfil determinístico** — a mesma derivação alimenta o seed e os evals.
+
 ## Principios
 
-- Determinismo: `SEED_RANDOM_SEED` (default 42) fixa o RNG. Mesma entrada, mesmo banco.
-- Re-executavel (idempotente): rodar o seed de novo nao duplica; faz upsert por chave natural (CPF, numero_uc, protocolo).
-- Sem PII real: CPFs gerados com digito verificador valido porem ficticios; telefones vem do `.env`.
+- Determinismo: `SEED_RANDOM_SEED` (default 42) fixa a derivação. Mesma entrada, mesmo banco.
+- Re-executavel (idempotente): rodar o seed de novo nao duplica; upsert por chave natural
+  (CPF, numero_uc, (uc_id, mes_referencia), protocolo, idempotency_key) + IDs `uuid5`.
+- Sem PII real: CPFs com digito verificador valido porem ficticios; nomes/telefones via `.env`.
 - Horizonte: `SEED_HISTORY_MONTHS` (default 24).
 
-## Telefones e personas
+## Personas dinâmicas (`SEED_PERSONAS`)
 
-O seed le do `.env`:
+Fonte única, lida do `.env`, consumida por **seed e evals**:
 
 ```text
-DEMO_PHONE_PRIMARY  -> ana.souza
-DEMO_PHONE_EVAL_1   -> carlos.lima
-DEMO_PHONE_EVAL_2   -> joana.pereira
-DEMO_DEFAULT_PERSONA -> ana.souza
+SEED_PERSONAS="Nome:telefone;Nome:telefone;..."   # E.164 sem '+', >=1, ate ~100
 ```
 
-Se uma variavel estiver vazia, a persona recebe um telefone placeholder no formato E.164 (ex.: 555199990001) marcado como nao-demonstravel, e o seed segue. Voce pluga os numeros reais quando souber, sem mexer no codigo.
+- Default (`.env.example`): as 3 canônicas (Ana/Carlos/Joana) — evals com cenários conhecidos.
+- Cada persona é derivada por `perfil_de(telefone, seed)` (função pura, `src/domain/persona`):
+  bairro/cidade/classe, `n_ucs` (1..2), consumo base, **cenário de fatura**
+  (`em_dia`/`uma_aberta`/`uma_vencida`), `outage_ativa` no bairro, `corte_religacao`.
+- **Persona única** (ex.: só o número real do operador): recebe **perfil rico** (fatura
+  vencida + outage ativa) para exercitar as tools na demo.
+- Números reais de demo vivem **só no `.env`** local (gitignored), nunca no repositório.
 
 ## CPF ficticio valido
 

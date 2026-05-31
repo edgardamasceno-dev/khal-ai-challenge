@@ -1,0 +1,71 @@
+[project]
+name = "khal-ai-challenge"
+version = "0.4.0"
+description = "Sistema legado (API REST) + MCP server da Luz do Vale - camada de ferramentas do agente"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.30",
+  "sqlalchemy>=2.0,<2.1",
+  "psycopg[binary]>=3.2",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "httpx>=0.27",
+  "mcp>=1.12",
+  # SPEC-008: render da fatura (PDF A4) + object storage (ADR-0009)
+  "weasyprint>=62",
+  "jinja2>=3.1",
+  "qrcode[pil]>=7.4",
+  "python-barcode>=0.15",
+  "minio>=7.2",
+  # SPEC-009: event bus (NATS) das notificacoes proativas (ADR-0005)
+  "nats-py>=2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "httpx>=0.27",
+  "ruff>=0.7",
+  "mypy>=1.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI usa chamadas (Depends/Query/...) em defaults por design.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
+[tool.ruff.lint.per-file-ignores]
+# Mensagens de jornada / fixtures sao strings longas em pt-BR (nao quebram bem).
+"src/evals/journeys.py" = ["E501"]
+"tests/unit/test_evals.py" = ["E501"]
+# Apresentacao densa: dict de contexto e composicao tarifaria (SPEC-008).
+"src/infrastructure/pdf/weasyprint_renderer.py" = ["E501"]
+"src/domain/billing/faturamento.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+# Libs de render/storage sem stubs (SPEC-008).
+[[tool.mypy.overrides]]
+module = ["weasyprint", "barcode.*", "qrcode.*", "minio.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

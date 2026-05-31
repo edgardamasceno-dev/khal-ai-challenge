@@ -1,0 +1,56 @@
+# Override do compose REAL (implementation/docker-compose.yml). Adiciona o
+# sandbox + o egress-proxy + as redes internas, sem duplicar backend/mcp.
+#
+#   docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml \
+#     up -d --build mcp-server egress-proxy sandbox
+#
+# Isolamento:
+#   - mcpnet (interna): sandbox <-> mcp-server (so o negocio via MCP).
+#   - egressnet (interna): sandbox <-> egress-proxy (sem internet direta).
+#   - o egress-proxy e a UNICA rota p/ internet, com allowlist (Anthropic + WhatsApp).
+
+networks:
+  mcpnet:
+    internal: true
+  egressnet:
+    internal: true
+
+services:
+  mcp-server:
+    networks:
+      - default   # appnet: alcanca o backend
+      - mcpnet    # ponte p/ o sandbox
+
+  egress-proxy:
+    # Imagem pre-buildada: docker build -t khal-egress-proxy sandbox/egress
+    image: khal-egress-proxy
+    container_name: khal-egress-proxy
+    restart: unless-stopped
+    networks:
+      - egressnet   # interna: o sandbox fala com o proxy aqui
+      - default     # tem internet (saida allowlisted)
+
+  sandbox:
+    image: khal-sandbox:base
+    container_name: khal-sandbox
+    command: ["sleep", "infinity"]
+    restart: unless-stopped
+    networks:
+      - mcpnet      # so o mcp-server
+      - egressnet   # so o proxy (sem internet direta)
+    environment:
+      HTTP_PROXY: http://egress-proxy:8888
+      HTTPS_PROXY: http://egress-proxy:8888
+      NO_PROXY: mcp-server,localhost,127.0.0.1
+      # MCP interno (mcpnet) consumido pelo agente CX via Claude Code.
+      MCP_URL: http://mcp-server:8000/mcp
+    volumes:
+      # Persona da entrega (fonte única do AGENTS.md do agente CX), só leitura.
+      - ./agent:/srv/agent-src:ro
+      # Login do Claude Code + config MCP (escopo user), persistido e NÃO versionado (ADR-0007).
+      - claude-home:/home/node/.claude
+    depends_on:
+      - egress-proxy
+
+volumes:
+  claude-home:

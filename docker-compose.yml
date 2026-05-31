@@ -1,0 +1,158 @@
+name: khal-ai-challenge
+
+# Rollout incremental (ADR-0006):
+#   1. database (schema) + seed (seeder Python por personas, SPEC-006/ADR-0008)
+#   2. backend (FastAPI) + gateway (nginx, por path /api) (SPEC-001)
+#   3. frontend (console React/Shadcn, gateway roteia "/") (SPEC-002)
+#   4. mcp-server (gateway "/mcp", SPEC-003) + minio (faturas PDF, "/files", SPEC-008)
+# `docker compose up -d --build` -> console em /, API em /api, MCP em /mcp.
+# Personas via SEED_PERSONAS no .env. Re-seed do zero: `docker compose down -v && up`.
+
+services:
+  database:
+    image: postgres:18
+    container_name: khal-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-khal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khal_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-khal}
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro  # só o schema (01-schema.sql)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-khal} -d ${POSTGRES_DB:-khal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Seeder programático (ADR-0008): materializa a massa a partir de SEED_PERSONAS.
+  # One-shot, idempotente; roda após o schema e antes do backend servir dados.
+  seed:
+    build: .
+    container_name: khal-seed
+    restart: "no"
+    command: ["python", "-m", "src.infrastructure.seed"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
+      SEED_PERSONAS: "${SEED_PERSONAS:-Ana Souza:555199990001;Carlos Lima:555199990002;Joana Pereira:555199990003}"
+      SEED_RANDOM_SEED: ${SEED_RANDOM_SEED:-42}
+      SEED_HISTORY_MONTHS: ${SEED_HISTORY_MONTHS:-24}
+    depends_on:
+      database:
+        condition: service_healthy
+
+  # Object storage das faturas (PDF) — ADR-0009 / SPEC-008.
+  minio:
+    image: minio/minio:latest
+    container_name: khal-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  backend:
+    build: .
+    container_name: khal-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-faturas}
+      FILES_PUBLIC_BASE_URL: ${FILES_PUBLIC_BASE_URL:-http://localhost/files}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      OMNI_URL: ${OMNI_URL:-http://omni:8882}
+      OMNI_API_KEY: ${OMNI_API_KEY:-}
+    depends_on:
+      database:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  # Event bus das notificações proativas (SPEC-009 / ADR-0005). JetStream on.
+  nats:
+    image: nats:latest
+    container_name: khal-nats
+    restart: unless-stopped
+    command: ["-js"]
+
+  # Worker determinístico: consome utilitycx.* -> Omni + conversation_memory (sem LLM).
+  notifications-worker:
+    build: .
+    container_name: khal-notifications-worker
+    restart: unless-stopped
+    command: ["python", "-m", "src.infrastructure.events.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      # Omni do sandbox: o worker resolve o JID via check-number e envia (SPEC-009).
+      # Sem Omni acessível, best-effort (só memória). Key/instância são do runtime do sandbox.
+      OMNI_URL: ${OMNI_URL:-http://omni:8882}
+      OMNI_API_KEY: ${OMNI_API_KEY:-}
+      OMNI_INSTANCE_ID: ${OMNI_INSTANCE_ID:-}
+    depends_on:
+      database:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
+
+  frontend:
+    build: ./ui
+    container_name: khal-frontend
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: khal-mcp
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: khal-gateway
+    restart: unless-stopped
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${GATEWAY_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      mcp-server:
+        condition: service_started
+
+volumes:
+  pgdata:
+  miniodata:

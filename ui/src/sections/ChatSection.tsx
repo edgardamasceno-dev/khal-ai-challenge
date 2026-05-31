@@ -239,7 +239,7 @@ export function ChatSection({ phone }: { phone: string }) {
               <span
                 className={cn(
                   "mt-1 block font-mono text-[10px] tabular-nums",
-                  m.do_cliente ? "text-muted-foreground" : "text-primary-foreground/70",
+                  m.do_cliente ? "text-muted-foreground" : "text-primary-foreground",
                 )}
               >
                 {hora(m.em)}

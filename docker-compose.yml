@@ -107,8 +107,11 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
       NATS_URL: ${NATS_URL:-nats://nats:4222}
+      # Omni do sandbox: o worker resolve o JID via check-number e envia (SPEC-009).
+      # Sem Omni acessível, best-effort (só memória). Key/instância são do runtime do sandbox.
       OMNI_URL: ${OMNI_URL:-http://omni:8882}
       OMNI_API_KEY: ${OMNI_API_KEY:-}
+      OMNI_INSTANCE_ID: ${OMNI_INSTANCE_ID:-}
     depends_on:
       database:
         condition: service_healthy

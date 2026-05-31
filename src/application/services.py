@@ -331,6 +331,7 @@ class TicketingService:
         titulares: TitularRepository,
         uow: UnitOfWork,
         control: ChannelControlPort | None = None,
+        directory: ChatDirectoryPort | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._chamados = chamados
@@ -338,6 +339,7 @@ class TicketingService:
         self._titulares = titulares
         self._uow = uow
         self._control = control
+        self._directory = directory
         self._clock: Clock = clock or _utcnow
 
     def open_ticket(
@@ -401,18 +403,18 @@ class TicketingService:
         remetente: str | None = None,
     ) -> Handoff:
         """Registra o handoff e **pausa a IA** no canal (SPEC-016), p/ atendimento
-        humano. A pausa é best-effort: sem canal/remetente, só registra."""
-        handoff = Handoff(
-            id=uuid.uuid4(),
-            chamado_id=chamado_id,
-            motivo=motivo,
-            status="pendente",
-            operador=None,
-            criado_em=self._clock(),
-            remetente=remetente,
-        )
+        humano. A pausa é best-effort: sem canal/remetente, só registra.
+
+        O remetente é normalizado para o telefone canônico (resolve LID via Omni),
+        para que a fila e a aba Chat casem pelo mesmo telefone."""
         try:
-            salvo = self._handoffs.add(handoff)
+            salvo = self._handoffs.add(
+                Handoff(
+                    id=uuid.uuid4(), chamado_id=chamado_id, motivo=motivo,
+                    status="pendente", operador=None, criado_em=self._clock(),
+                    remetente=self._normalizar_remetente(remetente),
+                )
+            )
             self._uow.commit()
         except Exception:
             self._uow.rollback()
@@ -421,9 +423,33 @@ class TicketingService:
             self._control.pausar_agente(remetente)
         return salvo
 
+    def _normalizar_remetente(self, remetente: str | None) -> str | None:
+        """LID/telefone -> telefone canônico (para casar com o phone da aba Chat)."""
+        if not remetente:
+            return None
+        if self._directory is not None:
+            canonical = self._directory.resolve_canonical(remetente)
+            if canonical:
+                return canonical
+        return normalizar_msisdn(remetente)
+
     def list_handoffs(self) -> list[Handoff]:
         """Fila de handoffs pendentes (atendimento humano em aberto)."""
         return self._handoffs.list_pendentes()
+
+    def resolver_handoffs_do_remetente(self, phone: str) -> int:
+        """Marca como resolvidos os handoffs pendentes do cliente (casa pelo telefone,
+        tolerando o 9º dígito). Mantém a fila de Chamados consistente quando o operador
+        devolve pela aba Chat (SPEC-018)."""
+        variantes = set(variantes_nono_digito(normalizar_msisdn(phone)))
+        resolvidos = 0
+        for h in self._handoffs.list_pendentes():
+            if h.remetente and normalizar_msisdn(h.remetente) in variantes:
+                self._handoffs.set_status(h.id, "resolvido", "chat")
+                resolvidos += 1
+        if resolvidos:
+            self._uow.commit()
+        return resolvidos
 
     def resume_handoff(self, handoff_id: uuid.UUID, operador: str | None = None) -> Handoff:
         """Operador devolve à IA: retoma o agente no canal + marca `resolvido`."""

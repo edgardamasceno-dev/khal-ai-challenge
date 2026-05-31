@@ -8,8 +8,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from src.application.services import OperatorChatService
-from src.interfaces.rest.dependencies import get_operator_chat_service
+from src.application.services import OperatorChatService, TicketingService
+from src.interfaces.rest.dependencies import (
+    get_operator_chat_service,
+    get_ticketing_service,
+)
 from src.interfaces.rest.schemas import (
     ChatMessageDTO,
     ChatStatusDTO,
@@ -46,19 +49,27 @@ def get_status(
 @router.post("/{phone}/takeover", response_model=ChatStatusDTO)
 def takeover(
     phone: str,
-    svc: OperatorChatService = Depends(get_operator_chat_service),
+    ticketing: TicketingService = Depends(get_ticketing_service),
 ) -> ChatStatusDTO:
-    """Operador assume o controle: pausa a IA."""
-    return ChatStatusDTO(pausado=bool(svc.takeover(phone)["pausado"]))
+    """Operador assume o controle: pausa a IA **e registra o handoff** na fila, para
+    a aba Chamados e a aba Chat ficarem consistentes (SPEC-018)."""
+    ticketing.request_handoff(
+        chamado_id=None, motivo="Operador assumiu pelo chat", remetente=phone
+    )
+    return ChatStatusDTO(pausado=True)
 
 
 @router.post("/{phone}/release", response_model=ChatStatusDTO)
 def release(
     phone: str,
     svc: OperatorChatService = Depends(get_operator_chat_service),
+    ticketing: TicketingService = Depends(get_ticketing_service),
 ) -> ChatStatusDTO:
-    """Operador devolve ao agente: retoma a IA."""
-    return ChatStatusDTO(pausado=bool(svc.release(phone)["pausado"]))
+    """Operador devolve ao agente: retoma a IA **e resolve os handoffs pendentes**
+    do cliente, para a fila de Chamados não ficar com registros órfãos (SPEC-018)."""
+    svc.release(phone)
+    ticketing.resolver_handoffs_do_remetente(phone)
+    return ChatStatusDTO(pausado=False)
 
 
 @router.post("/{phone}/send")

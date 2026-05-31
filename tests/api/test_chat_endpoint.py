@@ -28,6 +28,15 @@ def test_takeover_e_release_alternam_pausa(ctx: SimpleNamespace) -> None:
     assert rel.json()["pausado"] is False and ctx.control.retomados == [PHONE]
 
 
+def test_consistencia_chat_chamados(ctx: SimpleNamespace) -> None:
+    # SPEC-018: takeover (Chat) registra na fila de Chamados; release resolve.
+    ctx.client.post(f"/chats/{PHONE}/takeover")
+    fila = ctx.client.get("/handoffs").json()
+    assert any(h["remetente"] == PHONE for h in fila)  # apareceu na fila
+    ctx.client.post(f"/chats/{PHONE}/release")
+    assert ctx.client.get("/handoffs").json() == []  # release limpou a fila
+
+
 def test_send_mensagem(ctx: SimpleNamespace) -> None:
     r = ctx.client.post(f"/chats/{PHONE}/send", json={"texto": "Posso ajudar?"})
     assert r.status_code == 200 and r.json()["enviado"] is True

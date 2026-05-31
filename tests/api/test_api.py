@@ -143,7 +143,8 @@ class TestTicketingApi:
         assert any(h["id"] == hid for h in fila)
         resume = ctx.client.post(f"/handoffs/{hid}/resume", json={"operador": "op1"})
         assert resume.status_code == 200 and resume.json()["status"] == "resolvido"
-        assert ctx.control.retomados == ["87866608713902@lid"]
+        # retoma com o remetente normalizado (guardado no handoff)
+        assert ctx.control.retomados == ["87866608713902"]
         assert ctx.client.get("/handoffs").json() == []
 
 

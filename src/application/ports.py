@@ -10,7 +10,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from src.domain.billing.documento import FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
-from src.domain.conversation.entities import MemoriaConversa
+from src.domain.conversation.entities import MemoriaConversa, MensagemChat
 from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.ticketing.entities import Chamado, Handoff
@@ -142,6 +142,16 @@ class ChannelControlPort(Protocol):
 
     def pausar_agente(self, remetente: str) -> bool: ...
     def retomar_agente(self, remetente: str) -> bool: ...
+    def esta_pausado(self, remetente: str) -> bool: ...
+
+
+@runtime_checkable
+class ChatTranscriptPort(Protocol):
+    """Histórico da conversa (Omni). Devolve (mensagens, próximo cursor, tem_mais)."""
+
+    def mensagens(
+        self, remetente: str, limit: int, cursor: str | None
+    ) -> tuple[list[MensagemChat], str | None, bool]: ...
 
 
 @runtime_checkable

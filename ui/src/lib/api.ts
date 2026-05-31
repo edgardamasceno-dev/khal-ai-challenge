@@ -148,6 +148,23 @@ export interface Persona {
   persona_key: string | null
 }
 
+export interface ChatMessage {
+  id: string
+  texto: string
+  do_cliente: boolean
+  em: string
+}
+
+export interface ChatTranscript {
+  mensagens: ChatMessage[]
+  cursor: string | null
+  tem_mais: boolean
+}
+
+export interface ChatStatus {
+  pausado: boolean
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
@@ -174,6 +191,23 @@ export const api = {
 
   // SPEC-012: personas cadastradas (atalhos da primeira tela).
   listPersonas: () => request<Persona[]>("/personas"),
+
+  // SPEC-018: aba Chat do operador (transcript + takeover).
+  chatMessages: (phone: string, limit = 10, cursor?: string | null) =>
+    request<ChatTranscript>(
+      `/chats/${phone}/messages?limit=${limit}` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""),
+    ),
+  chatStatus: (phone: string) => request<ChatStatus>(`/chats/${phone}/status`),
+  chatTakeover: (phone: string) =>
+    request<ChatStatus>(`/chats/${phone}/takeover`, { method: "POST" }),
+  chatRelease: (phone: string) =>
+    request<ChatStatus>(`/chats/${phone}/release`, { method: "POST" }),
+  chatSend: (phone: string, texto: string) =>
+    request<{ enviado: boolean }>(`/chats/${phone}/send`, {
+      method: "POST",
+      body: JSON.stringify({ texto }),
+    }),
 
   listInvoices: (ucId: string) =>
     request<Invoice[]>(`/units/${ucId}/invoices?limit=24`),

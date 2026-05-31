@@ -17,6 +17,7 @@ from src.application.services import (
     HealthService,
     InvoiceDocumentService,
     MemoryService,
+    OperatorChatService,
     OutageService,
     ProactiveService,
     TicketingService,
@@ -70,9 +71,20 @@ def get_session() -> Iterator[Session]:
 
 @lru_cache(maxsize=1)
 def _chat_directory() -> HttpxOmniChats:
-    # Resolve LID -> telefone canônico pelo Omni do sandbox (SPEC-015).
+    # Resolve LID -> telefone, controle (pausar/retomar) e transcript (SPEC-015/016/018).
     return HttpxOmniChats(
         settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+    )
+
+
+def get_operator_chat_service() -> OperatorChatService:
+    chats = _chat_directory()
+    return OperatorChatService(
+        transcript=chats,
+        control=chats,
+        sender=HttpxOmniSender(
+            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+        ),
     )
 
 

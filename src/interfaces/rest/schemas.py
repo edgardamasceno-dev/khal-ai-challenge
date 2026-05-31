@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
-from src.domain.conversation.entities import MemoriaConversa
+from src.domain.conversation.entities import MemoriaConversa, MensagemChat
 from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.value_objects import TipoChamado
@@ -231,3 +231,28 @@ class KbResultDTO(BaseModel):
     @classmethod
     def from_entity(cls, r: ResultadoKB) -> KbResultDTO:
         return cls(slug=r.slug, titulo=r.titulo, trecho=r.trecho, score=r.score)
+
+
+class ChatMessageDTO(BaseModel):
+    id: str
+    texto: str
+    do_cliente: bool
+    em: dt.datetime
+
+    @classmethod
+    def from_entity(cls, m: MensagemChat) -> ChatMessageDTO:
+        return cls(id=m.id, texto=m.texto, do_cliente=m.do_cliente, em=m.em)
+
+
+class ChatTranscriptDTO(BaseModel):
+    mensagens: list[ChatMessageDTO]
+    cursor: str | None
+    tem_mais: bool
+
+
+class ChatStatusDTO(BaseModel):
+    pausado: bool
+
+
+class SendMessageRequest(BaseModel):
+    texto: str

@@ -15,6 +15,7 @@ from src.application.ports import (
     ChannelControlPort,
     ChannelHealthPort,
     ChatDirectoryPort,
+    ChatTranscriptPort,
     EventBus,
     FaturaRepository,
     HandoffRepository,
@@ -29,7 +30,7 @@ from src.application.ports import (
 )
 from src.domain.billing.documento import DocumentoFatura, FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
-from src.domain.conversation.entities import MemoriaConversa
+from src.domain.conversation.entities import MemoriaConversa, MensagemChat
 from src.domain.notifications.entities import EventoCX
 from src.domain.notifications.templates import render_notificacao
 from src.domain.outage.entities import Interrupcao
@@ -78,6 +79,44 @@ class HealthService:
         return HealthReport(
             status=geral, db="ok" if db_ok else "down", components=componentes
         )
+
+
+class OperatorChatService:
+    """Aba Chat do operador (SPEC-018): transcript do Omni + takeover/envio.
+
+    Assumir o controle pausa a IA (agentPaused, SPEC-016); devolver retoma.
+    """
+
+    def __init__(
+        self,
+        transcript: ChatTranscriptPort,
+        control: ChannelControlPort,
+        sender: OmniSender,
+    ) -> None:
+        self._transcript = transcript
+        self._control = control
+        self._sender = sender
+
+    def transcript(
+        self, phone: str, limit: int = 10, cursor: str | None = None
+    ) -> tuple[list[MensagemChat], str | None, bool]:
+        return self._transcript.mensagens(phone, limit, cursor)
+
+    def status(self, phone: str) -> dict[str, object]:
+        return {"pausado": self._control.esta_pausado(phone)}
+
+    def takeover(self, phone: str) -> dict[str, object]:
+        """Operador assume: pausa a IA."""
+        ok = self._control.pausar_agente(phone)
+        return {"pausado": True, "ok": ok}
+
+    def release(self, phone: str) -> dict[str, object]:
+        """Operador devolve ao agente: retoma a IA."""
+        ok = self._control.retomar_agente(phone)
+        return {"pausado": False, "ok": ok}
+
+    def send(self, phone: str, texto: str) -> dict[str, object]:
+        return {"enviado": self._sender.send_text(phone, texto)}
 
 
 class BillingService:

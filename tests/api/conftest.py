@@ -17,12 +17,14 @@ from src.application.services import (
     HealthService,
     InvoiceDocumentService,
     MemoryService,
+    OperatorChatService,
     OutageService,
     ProactiveService,
     TicketingService,
 )
 from src.domain.billing.documento import FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
+from src.domain.conversation.entities import MensagemChat
 from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.value_objects import CPF, Dinheiro, Telefone
@@ -33,6 +35,7 @@ from src.interfaces.rest.dependencies import (
     get_invoice_document_service,
     get_knowledge_retrieval,
     get_memory_service,
+    get_operator_chat_service,
     get_outage_service,
     get_proactive_service,
     get_session,
@@ -40,6 +43,7 @@ from src.interfaces.rest.dependencies import (
 )
 from tests.unit.fakes import (
     FakeChamadoRepository,
+    FakeChatTranscript,
     FakeFaturaRepository,
     FakeHandoffRepository,
     FakeInterrupcaoRepository,
@@ -112,14 +116,20 @@ class _FakeChannelControl:
     def __init__(self) -> None:
         self.pausados: list[str] = []
         self.retomados: list[str] = []
+        self.pausado = False
 
     def pausar_agente(self, remetente: str) -> bool:
         self.pausados.append(remetente)
+        self.pausado = True
         return True
 
     def retomar_agente(self, remetente: str) -> bool:
         self.retomados.append(remetente)
+        self.pausado = False
         return True
+
+    def esta_pausado(self, remetente: str) -> bool:
+        return self.pausado
 
 
 @pytest.fixture
@@ -170,6 +180,15 @@ def ctx() -> Iterator[SimpleNamespace]:
     outage_svc = OutageService(FakeInterrupcaoRepository([outage]))
     control = _FakeChannelControl()
     ticketing = TicketingService(chamados, handoffs, titulares, uow, control=control)
+    chat_msgs = [
+        MensagemChat(id="m1", texto="Oi, preciso da 2ª via", do_cliente=True,
+                     em=dt.datetime(2026, 5, 31, 3, tzinfo=dt.UTC)),
+        MensagemChat(id="m2", texto="Claro! Enviei o PDF.", do_cliente=False,
+                     em=dt.datetime(2026, 5, 31, 3, 1, tzinfo=dt.UTC)),
+    ]
+    op_chat = OperatorChatService(
+        FakeChatTranscript(chat_msgs), control, _FakeSender()
+    )
     memory = MemoryService(memorias, uow)
     knowledge = FakeKnowledgeRetrieval(
         [ResultadoKB("titularidade", "Transferencia de titularidade", "Para transferir...", 9)]
@@ -185,6 +204,7 @@ def ctx() -> Iterator[SimpleNamespace]:
     app.dependency_overrides[get_knowledge_retrieval] = lambda: knowledge
     app.dependency_overrides[get_session] = lambda: _FakeSession()
     app.dependency_overrides[get_health_service] = lambda: HealthService(_FakeChannelHealth())
+    app.dependency_overrides[get_operator_chat_service] = lambda: op_chat
 
     with TestClient(app) as client:
         yield SimpleNamespace(

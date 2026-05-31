@@ -254,7 +254,8 @@ class TestTicketingService:
         ho = svc.request_handoff(
             chamado_id=None, motivo="quer atendente", remetente="87866608713902@lid"
         )
-        assert ho.status == "pendente" and ho.remetente == "87866608713902@lid"
+        # remetente é normalizado (sem @lid) para casar com a aba Chat (SPEC-018)
+        assert ho.status == "pendente" and ho.remetente == "87866608713902"
         assert control.pausados == ["87866608713902@lid"]
 
     def test_request_handoff_sem_remetente_nao_pausa(self) -> None:
@@ -275,6 +276,20 @@ class TestTicketingService:
         svc, _, _ = self._svc_handoff()
         with pytest.raises(NotFoundError):
             svc.resume_handoff(uuid.uuid4())
+
+    def test_resolver_handoffs_do_remetente_casa_por_telefone(self) -> None:
+        # SPEC-018: devolver pela aba Chat resolve o handoff pendente (casa pelo 9º dígito).
+        svc, handoffs, _ = self._svc_handoff()
+        svc.request_handoff(chamado_id=None, motivo="x", remetente="558193112159")  # sem 9
+        assert len(svc.list_handoffs()) == 1
+        n = svc.resolver_handoffs_do_remetente("5581993112159")  # com 9
+        assert n == 1 and svc.list_handoffs() == []
+
+    def test_resolver_handoffs_ignora_outro_cliente(self) -> None:
+        svc, _, _ = self._svc_handoff()
+        svc.request_handoff(chamado_id=None, motivo="x", remetente="558193112159")
+        assert svc.resolver_handoffs_do_remetente("550000000000") == 0
+        assert len(svc.list_handoffs()) == 1
 
 
 class TestMemoryService:

@@ -129,3 +129,13 @@ def generate_invoice_pdf(
         url=doc.url, presigned=doc.presigned, expires_at=doc.expires_at,
         generated=doc.gerado_agora,
     )
+
+
+@router.post("/invoices/{fatura_id}/send")
+def send_invoice(
+    fatura_id: uuid.UUID,
+    expires: int = Query(3600, ge=60, le=604800),
+    svc: InvoiceDocumentService = Depends(get_invoice_document_service),
+) -> dict[str, object]:
+    """Envia a 2ª via ao titular: PDF anexo no WhatsApp + link no texto (SPEC-017)."""
+    return svc.enviar_2a_via(fatura_id, expires=expires)

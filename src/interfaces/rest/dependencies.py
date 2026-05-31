@@ -108,6 +108,9 @@ def get_invoice_document_service(
         titulares=SqlTitularRepository(session),
         renderer=WeasyPrintInvoiceRenderer(),
         storage=_object_storage(),
+        sender=HttpxOmniSender(
+            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+        ),
     )
 
 

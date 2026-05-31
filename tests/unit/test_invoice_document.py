@@ -47,6 +47,22 @@ class MemStorage:
         return f"http://minio/{key}?X-Expires={expires_seconds}&sig=abc"
 
 
+class RecordingSender:
+    def __init__(self) -> None:
+        self.docs: list[tuple[str, str]] = []  # (chat_id, filename)
+        self.texts: list[tuple[str, str]] = []
+
+    def send_text(self, chat_id: str, texto: str) -> bool:
+        self.texts.append((chat_id, texto))
+        return True
+
+    def send_document(
+        self, chat_id: str, conteudo: bytes, filename: str, caption: str = ""
+    ) -> bool:
+        self.docs.append((chat_id, filename))
+        return True
+
+
 def _service() -> tuple[InvoiceDocumentService, CountingRenderer, MemStorage]:
     titular = Titular(id=TIT_ID, nome="Edgar", cpf=CPF("52998224725"),
                       telefone=Telefone("5581993112159"), email=None, persona_key="edgar")
@@ -99,3 +115,20 @@ def test_fatura_inexistente_404() -> None:
     svc, _, _ = _service()
     with pytest.raises(NotFoundError):
         svc.obter_ou_gerar(uuid.uuid4())
+
+
+def test_enviar_2a_via_anexa_pdf_e_link() -> None:
+    # SPEC-017: envia o PDF anexo ao telefone do titular + o link no texto.
+    svc, _, _ = _service()
+    sender = RecordingSender()
+    svc._sender = sender  # type: ignore[attr-defined]
+    res = svc.enviar_2a_via(FAT_ID)
+    assert res["enviado"] is True and res["mes_referencia"] == "2026-05"
+    assert sender.docs == [("5581993112159", "fatura-2026-05.pdf")]  # anexo ao titular
+    assert sender.texts and "X-Expires" in sender.texts[0][1]  # link pré-assinado
+
+
+def test_enviar_2a_via_sem_sender_so_link() -> None:
+    svc, _, _ = _service()  # sem sender
+    res = svc.enviar_2a_via(FAT_ID)
+    assert res["enviado"] is False and res["url"]  # gera/persiste, só não envia

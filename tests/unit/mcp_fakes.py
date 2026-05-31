@@ -125,6 +125,13 @@ class FakeLegacyApiClient:
         return {"url": f"http://localhost/files/invoices/{fatura_id}.pdf",
                 "presigned": False, "expires_at": None, "generated": True}
 
+    def send_invoice(self, fatura_id: str) -> dict[str, Any]:
+        return {
+            "enviado": True, "mes_referencia": "2026-05", "status": "em_aberto",
+            "url": f"http://minio/invoices/{fatura_id}.pdf?X-Expires=3600",
+            "presigned": True, "expires_at": "2026-05-30T13:00:00Z",
+        }
+
     def get_outage(self, bairro: str) -> dict[str, Any]:
         if bairro.lower() == "jardim das flores":
             return {

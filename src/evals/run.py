@@ -21,7 +21,7 @@ AGENT_DIR = REPO / "agent"
 TOOLS = [
     "find_customer_by_phone", "list_contracts", "get_invoice_status",
     "get_outage_by_region", "create_ticket", "get_ticket_status",
-    "request_human_handoff",
+    "request_human_handoff", "search_knowledge_base",
 ]
 ALLOWED = [f"mcp__luz-do-vale__{t}" for t in TOOLS]
 

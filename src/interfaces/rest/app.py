@@ -16,6 +16,7 @@ from src.interfaces.rest.routers import (
     health,
     knowledge,
     outage,
+    proactive,
     ticketing,
 )
 
@@ -28,7 +29,7 @@ def create_app() -> FastAPI:
         root_path="/api",
     )
     register_exception_handlers(app)
-    for module in (health, billing, outage, ticketing, conversation, knowledge):
+    for module in (health, billing, outage, ticketing, conversation, knowledge, proactive):
         app.include_router(module.router)
     return app
 

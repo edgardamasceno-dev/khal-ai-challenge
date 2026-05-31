@@ -91,6 +91,7 @@ export default function App() {
             customer={customer}
             contracts={contracts}
             tickets={tickets}
+            phone={phone.trim()}
             onTicketsChanged={refreshTickets}
           />
         ) : (

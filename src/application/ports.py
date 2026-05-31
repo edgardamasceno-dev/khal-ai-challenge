@@ -5,7 +5,7 @@ infrastructure/. Repository pattern + Unit of Work.
 from __future__ import annotations
 
 import uuid
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from src.domain.billing.documento import FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
@@ -81,6 +81,20 @@ class HandoffRepository(Protocol):
 class MemoriaRepository(Protocol):
     def list_for_chat(self, chat_id: str) -> list[MemoriaConversa]: ...
     def upsert(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa: ...
+
+
+@runtime_checkable
+class EventBus(Protocol):
+    """Publica/consome eventos de domínio (utilitycx.*). Adapter: NATS."""
+
+    def publish(self, subject: str, payload: dict[str, Any]) -> None: ...
+
+
+@runtime_checkable
+class OmniSender(Protocol):
+    """Envia texto pelo canal (Omni REST). Best-effort no deliverable."""
+
+    def send_text(self, chat_id: str, texto: str) -> bool: ...
 
 
 @runtime_checkable

@@ -106,6 +106,35 @@ export class ApiError extends Error {
   }
 }
 
+export interface ProactivePagamento {
+  fatura_id: string
+  numero_uc: string
+  mes_referencia: string
+  valor: string
+  status: string
+}
+
+export interface ProactiveOutage {
+  bairro: string
+  previsao: string | null
+  status: string
+}
+
+export interface ProactiveCandidates {
+  encontrado: boolean
+  motivo?: string
+  titular?: string
+  telefone?: string
+  pagamentos?: ProactivePagamento[]
+  outages?: ProactiveOutage[]
+}
+
+export interface ProactiveEventResult {
+  publicado: boolean
+  subject: string
+  preview: string
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
@@ -152,6 +181,21 @@ export const api = {
 
   requestHandoff: (input: { chamado_id: string | null; motivo: string | null }) =>
     request<Handoff>("/handoffs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  // Notificações proativas (SPEC-009).
+  getProactiveCandidates: (phone: string) =>
+    request<ProactiveCandidates>(`/proactive/candidates?phone=${encodeURIComponent(phone)}`),
+
+  emitProactiveEvent: (input: {
+    phone: string
+    tipo: string
+    subtipo: string
+    dados: Record<string, string>
+  }) =>
+    request<ProactiveEventResult>("/proactive/events", {
       method: "POST",
       body: JSON.stringify(input),
     }),

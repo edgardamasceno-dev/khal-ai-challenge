@@ -18,6 +18,8 @@ dependencies = [
   "qrcode[pil]>=7.4",
   "python-barcode>=0.15",
   "minio>=7.2",
+  # SPEC-009: event bus (NATS) das notificacoes proativas (ADR-0005)
+  "nats-py>=2.6",
 ]
 
 [project.optional-dependencies]

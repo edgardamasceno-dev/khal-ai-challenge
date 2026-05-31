@@ -24,7 +24,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { CustomerWorkspace } from "@/sections/CustomerWorkspace"
@@ -117,35 +116,33 @@ export default function App() {
         </Card>
 
         {personas.length > 0 && (
-          <TooltipProvider delayDuration={200}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">Personas cadastradas:</span>
-              {personas.map((p) => (
-                <Tooltip key={p.telefone}>
-                  <TooltipTrigger asChild>
-                    <Badge asChild variant="secondary" className="font-mono text-[11px] tabular-nums">
-                      <button
-                        type="button"
-                        className="cursor-pointer hover:bg-secondary/70"
-                        onClick={() => {
-                          setPhone(p.telefone)
-                          search(p.telefone)
-                        }}
-                      >
-                        {p.nome.split(" ")[0]} · {p.telefone}
-                      </button>
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <span className="font-sans">{p.nome}</span>
-                    {p.persona_key && (
-                      <span className="font-mono text-muted-foreground">{p.persona_key}</span>
-                    )}
-                  </TooltipContent>
-                </Tooltip>
-              ))}
-            </div>
-          </TooltipProvider>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Personas cadastradas:</span>
+            {personas.map((p) => (
+              <Tooltip key={p.telefone}>
+                <TooltipTrigger asChild>
+                  <Badge asChild variant="secondary" className="font-mono text-[11px] tabular-nums">
+                    <button
+                      type="button"
+                      className="cursor-pointer hover:bg-secondary/70"
+                      onClick={() => {
+                        setPhone(p.telefone)
+                        search(p.telefone)
+                      }}
+                    >
+                      {p.nome.split(" ")[0]} · {p.telefone}
+                    </button>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <span className="font-sans">{p.nome}</span>
+                  {p.persona_key && (
+                    <span className="font-mono text-muted-foreground">{p.persona_key}</span>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
         )}
 
         {customer ? (

@@ -138,6 +138,11 @@ class TestBillingService:
     def test_get_titular_por_fatura(self) -> None:
         assert _billing().get_titular_por_fatura(FAT_ID).persona_key == "ana.souza"
 
+    def test_list_personas(self) -> None:
+        personas = _billing().list_personas()
+        assert [p.persona_key for p in personas] == ["ana.souza"]
+        assert personas[0].telefone.value == "555199990001"
+
 
 class TestOutageService:
     def _svc(self) -> OutageService:

@@ -101,6 +101,10 @@ class SqlTitularRepository:
         o = self._s.get(TitularORM, titular_id)
         return _to_titular(o) if o else None
 
+    def list_all(self) -> list[Titular]:
+        stmt = select(TitularORM).order_by(TitularORM.nome)
+        return [_to_titular(o) for o in self._s.execute(stmt).scalars().all()]
+
     def list_contratos(self, titular_id: uuid.UUID) -> list[Contrato]:
         rows = self._s.execute(
             select(ContratoORM, UnidadeORM)

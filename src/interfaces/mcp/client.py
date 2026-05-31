@@ -33,6 +33,12 @@ class HttpxLegacyApiClient:
         data: list[dict[str, Any]] = r.json()
         return data
 
+    def invoice_pdf(self, fatura_id: str, presigned: bool = False) -> dict[str, Any]:
+        r = self._c.get(f"/invoices/{fatura_id}/pdf", params={"presigned": presigned})
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+        return data
+
     def get_outage(self, bairro: str) -> dict[str, Any]:
         r = self._c.get("/outages", params={"bairro": bairro})
         r.raise_for_status()

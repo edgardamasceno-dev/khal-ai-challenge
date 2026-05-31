@@ -73,6 +73,31 @@ class CxTools:
                     )
         return {"encontrado": True, "titular": titular["nome"], "faturas_em_aberto": abertas}
 
+    def generate_invoice_pdf(self, phone: str, presigned: bool = False) -> dict[str, Any]:
+        """Gera (ou reaproveita) o PDF da fatura atual do titular e devolve a URL."""
+        titular = self._api.find_customer(phone)
+        if titular is None:
+            return {"gerado": False, "motivo": "Telefone nao identificado."}
+        faturas = [
+            inv
+            for c in self._api.list_contracts(titular["id"])
+            for inv in self._api.list_invoices(c["unidade"]["id"])
+        ]
+        if not faturas:
+            return {"gerado": False, "motivo": "Sem faturas para esta conta."}
+        abertas = [f for f in faturas if f["status"] in ("em_aberto", "vencida")]
+        alvo = max(abertas or faturas, key=lambda f: f["mes_referencia"])
+        doc = self._api.invoice_pdf(alvo["id"], presigned)
+        return {
+            "gerado": True,
+            "titular": titular["nome"],
+            "mes_referencia": alvo["mes_referencia"],
+            "status": alvo["status"],
+            "url": doc["url"],
+            "presigned": doc["presigned"],
+            "expires_at": doc.get("expires_at"),
+        }
+
     def get_outage_by_region(self, bairro: str) -> dict[str, Any]:
         res = self._api.get_outage(bairro)
         if not res["encontrada"]:

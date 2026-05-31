@@ -24,6 +24,7 @@ from src.application.services import (
 from src.config import settings
 from src.infrastructure.db import SessionLocal
 from src.infrastructure.events.nats_bus import NatsEventBus
+from src.infrastructure.events.omni_chats import HttpxOmniChats
 from src.infrastructure.events.omni_health import HttpxOmniHealth
 from src.infrastructure.events.omni_sender import HttpxOmniSender
 from src.infrastructure.knowledge import FilesystemKnowledgeRetrieval
@@ -67,12 +68,21 @@ def get_session() -> Iterator[Session]:
         session.close()
 
 
+@lru_cache(maxsize=1)
+def _chat_directory() -> HttpxOmniChats:
+    # Resolve LID -> telefone canônico pelo Omni do sandbox (SPEC-015).
+    return HttpxOmniChats(
+        settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+    )
+
+
 def get_billing_service(session: Session = Depends(get_session)) -> BillingService:
     return BillingService(
         SqlTitularRepository(session),
         SqlUnidadeRepository(session),
         SqlFaturaRepository(session),
         SqlAlchemyUnitOfWork(session),
+        directory=_chat_directory(),
     )
 
 

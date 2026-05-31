@@ -40,9 +40,10 @@ class TestBillingApi:
         assert r.status_code == 404
         assert r.json()["error"]["code"] == "NotFoundError"
 
-    def test_find_customer_invalido_422(self, ctx: SimpleNamespace) -> None:
+    def test_find_customer_nao_resolve_404(self, ctx: SimpleNamespace) -> None:
+        # SPEC-015: identidade flexível — o que não resolve é 404 (não 422).
         r = ctx.client.get("/customers", params={"phone": "123"})
-        assert r.status_code == 422
+        assert r.status_code == 404
 
     def test_get_customer_e_contratos(self, ctx: SimpleNamespace) -> None:
         assert ctx.client.get(f"/customers/{ANA_ID}").status_code == 200

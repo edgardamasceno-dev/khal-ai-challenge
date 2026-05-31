@@ -27,6 +27,10 @@ class FakeTitularRepository:
     def find_by_phone(self, telefone: str) -> Titular | None:
         return next((t for t in self._by_id.values() if t.telefone.value == telefone), None)
 
+    def find_by_phone_em(self, telefones: list[str]) -> Titular | None:
+        alvo = set(telefones)
+        return next((t for t in self._by_id.values() if t.telefone.value in alvo), None)
+
     def get(self, titular_id: uuid.UUID) -> Titular | None:
         return self._by_id.get(titular_id)
 

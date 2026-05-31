@@ -97,6 +97,15 @@ class SqlTitularRepository:
         ).scalar_one_or_none()
         return _to_titular(o) if o else None
 
+    def find_by_phone_em(self, telefones: list[str]) -> Titular | None:
+        """Primeiro titular cujo telefone esteja em `telefones` (variantes do 9º dígito)."""
+        if not telefones:
+            return None
+        o = self._s.execute(
+            select(TitularORM).where(TitularORM.telefone_principal.in_(telefones))
+        ).scalars().first()
+        return _to_titular(o) if o else None
+
     def get(self, titular_id: uuid.UUID) -> Titular | None:
         o = self._s.get(TitularORM, titular_id)
         return _to_titular(o) if o else None

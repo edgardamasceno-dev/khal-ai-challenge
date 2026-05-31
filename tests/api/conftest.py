@@ -103,6 +103,20 @@ class _FakeChannelHealth:
         return "ok"
 
 
+class _FakeChannelControl:
+    def __init__(self) -> None:
+        self.pausados: list[str] = []
+        self.retomados: list[str] = []
+
+    def pausar_agente(self, remetente: str) -> bool:
+        self.pausados.append(remetente)
+        return True
+
+    def retomar_agente(self, remetente: str) -> bool:
+        self.retomados.append(remetente)
+        return True
+
+
 @pytest.fixture
 def ctx() -> Iterator[SimpleNamespace]:
     ana = Titular(
@@ -149,7 +163,8 @@ def ctx() -> Iterator[SimpleNamespace]:
         clock=lambda: dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
     outage_svc = OutageService(FakeInterrupcaoRepository([outage]))
-    ticketing = TicketingService(chamados, handoffs, titulares, uow)
+    control = _FakeChannelControl()
+    ticketing = TicketingService(chamados, handoffs, titulares, uow, control=control)
     memory = MemoryService(memorias, uow)
     knowledge = FakeKnowledgeRetrieval(
         [ResultadoKB("titularidade", "Transferencia de titularidade", "Para transferir...", 9)]
@@ -169,5 +184,5 @@ def ctx() -> Iterator[SimpleNamespace]:
     with TestClient(app) as client:
         yield SimpleNamespace(
             client=client, chamados=chamados, handoffs=handoffs, bus=bus,
-            fatura_id=FAT_ID,
+            control=control, fatura_id=FAT_ID,
         )

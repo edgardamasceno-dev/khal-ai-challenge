@@ -91,6 +91,11 @@ class ChamadoRepository(Protocol):
 @runtime_checkable
 class HandoffRepository(Protocol):
     def add(self, handoff: Handoff) -> Handoff: ...
+    def list_pendentes(self) -> list[Handoff]: ...
+    def get(self, handoff_id: uuid.UUID) -> Handoff | None: ...
+    def set_status(
+        self, handoff_id: uuid.UUID, status: str, operador: str | None
+    ) -> Handoff | None: ...
 
 
 @runtime_checkable
@@ -126,6 +131,14 @@ class ChatDirectoryPort(Protocol):
     """Resolve o telefone canônico a partir do id externo do chat (LID). Adapter: Omni."""
 
     def resolve_canonical(self, external_id: str) -> str | None: ...
+
+
+@runtime_checkable
+class ChannelControlPort(Protocol):
+    """Controle do agente por conversa (Omni): pausar/retomar a IA. Best-effort."""
+
+    def pausar_agente(self, remetente: str) -> bool: ...
+    def retomar_agente(self, remetente: str) -> bool: ...
 
 
 @runtime_checkable

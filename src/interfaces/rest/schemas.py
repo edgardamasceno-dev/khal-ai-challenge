@@ -172,11 +172,17 @@ class CreateTicketResponse(BaseModel):
 class HandoffRequest(BaseModel):
     chamado_id: uuid.UUID | None = None
     motivo: str | None = None
+    remetente: str | None = None  # id do chat (LID/telefone) p/ pausar a IA (SPEC-016)
+
+
+class ResumeHandoffRequest(BaseModel):
+    operador: str | None = None
 
 
 class HandoffDTO(BaseModel):
     id: uuid.UUID
     chamado_id: uuid.UUID | None
+    remetente: str | None
     motivo: str | None
     status: str
     operador: str | None
@@ -185,8 +191,8 @@ class HandoffDTO(BaseModel):
     @classmethod
     def from_entity(cls, h: Handoff) -> HandoffDTO:
         return cls(
-            id=h.id, chamado_id=h.chamado_id, motivo=h.motivo, status=h.status,
-            operador=h.operador, criado_em=h.criado_em,
+            id=h.id, chamado_id=h.chamado_id, remetente=h.remetente, motivo=h.motivo,
+            status=h.status, operador=h.operador, criado_em=h.criado_em,
         )
 
 

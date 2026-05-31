@@ -94,3 +94,25 @@ class TestHttpxOmniChats:
             raise RuntimeError("sem rota")
 
         assert _chats(boom).resolve_canonical("87866608713902@lid") is None
+
+
+class TestChannelControl:
+    """pausar/retomar resolve o chat id por external/canonical (SPEC-016)."""
+
+    _CHATS = [
+        {"id": "chat-uuid", "externalId": "87866608713902@lid",
+         "canonicalId": "558193112159@s.whatsapp.net"},
+    ]
+
+    def test_chat_id_por_lid(self) -> None:
+        h = _chats(lambda: self._CHATS)
+        assert h._chat_id("87866608713902@lid") == "chat-uuid"
+
+    def test_chat_id_por_telefone_com_9(self) -> None:
+        # remetente com 9 casa o canonical sem 9 (variantes)
+        h = _chats(lambda: self._CHATS)
+        assert h._chat_id("5581993112159") == "chat-uuid"
+
+    def test_sem_match_none(self) -> None:
+        h = _chats(lambda: self._CHATS)
+        assert h._chat_id("550000000000") is None

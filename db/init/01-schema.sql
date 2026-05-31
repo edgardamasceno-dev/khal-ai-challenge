@@ -107,6 +107,7 @@ CREATE TABLE chamados (
 CREATE TABLE handoff_queue (
     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     chamado_id uuid REFERENCES chamados(id),
+    remetente  text,  -- id do chat (LID/telefone) p/ pausar/retomar a IA no Omni (SPEC-016)
     motivo     text,
     status     text NOT NULL DEFAULT 'pendente' CHECK (status IN
                  ('pendente','assumido','resolvido')),

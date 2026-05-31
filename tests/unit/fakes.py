@@ -156,6 +156,38 @@ class FakeHandoffRepository:
         self.items.append(handoff)
         return handoff
 
+    def list_pendentes(self) -> list[Handoff]:
+        return [h for h in self.items if h.status == "pendente"]
+
+    def get(self, handoff_id: uuid.UUID) -> Handoff | None:
+        return next((h for h in self.items if h.id == handoff_id), None)
+
+    def set_status(
+        self, handoff_id: uuid.UUID, status: str, operador: str | None
+    ) -> Handoff | None:
+        for idx, h in enumerate(self.items):
+            if h.id == handoff_id:
+                h = dataclasses.replace(h, status=status, operador=operador)
+                self.items[idx] = h
+                return h
+        return None
+
+
+class FakeChannelControl:
+    """Registra pausas/retomadas para asserts (SPEC-016)."""
+
+    def __init__(self) -> None:
+        self.pausados: list[str] = []
+        self.retomados: list[str] = []
+
+    def pausar_agente(self, remetente: str) -> bool:
+        self.pausados.append(remetente)
+        return True
+
+    def retomar_agente(self, remetente: str) -> bool:
+        self.retomados.append(remetente)
+        return True
+
 
 class FakeMemoriaRepository:
     def __init__(self) -> None:

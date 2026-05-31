@@ -32,3 +32,4 @@ class Handoff:
     status: str
     operador: str | None
     criado_em: dt.datetime
+    remetente: str | None = None

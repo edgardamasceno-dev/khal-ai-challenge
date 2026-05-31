@@ -169,7 +169,11 @@ class CxTools:
         if titular is None:
             return {"ok": False, "motivo": "Telefone nao identificado."}
         res = self._api.create_handoff(
-            {"chamado_id": None, "motivo": f"[{titular['nome']}] {motivo}"}
+            {
+                "chamado_id": None,
+                "motivo": f"[{titular['nome']}] {motivo}",
+                "remetente": phone,  # LID/telefone do remetente -> pausa a IA (SPEC-016)
+            }
         )
         return {"ok": True, "status": res["status"]}
 

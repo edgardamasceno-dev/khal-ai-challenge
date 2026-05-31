@@ -17,6 +17,7 @@ from src.application.services import (
     InvoiceDocumentService,
     MemoryService,
     OutageService,
+    ProactiveService,
     TicketingService,
 )
 from src.domain.billing.documento import FaturaDetalhada
@@ -31,6 +32,7 @@ from src.interfaces.rest.dependencies import (
     get_knowledge_retrieval,
     get_memory_service,
     get_outage_service,
+    get_proactive_service,
     get_session,
     get_ticketing_service,
 )
@@ -54,6 +56,16 @@ FAT_ID = uuid.UUID("ffff0001-0000-0000-0000-000000000001")
 class _FakeRenderer:
     def render(self, detalhe: FaturaDetalhada) -> bytes:
         return b"%PDF-1.7 fake"
+
+
+class _FakeBus:
+    def publish(self, subject: str, payload: dict) -> None:  # type: ignore[type-arg]
+        pass
+
+
+class _FakeSender:
+    def send_text(self, chat_id: str, texto: str) -> bool:
+        return True
 
 
 class _MemStorage:
@@ -116,6 +128,11 @@ def ctx() -> Iterator[SimpleNamespace]:
         _FakeRenderer(), _MemStorage(),
         clock=lambda: dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
+    proactive = ProactiveService(
+        _FakeBus(), _FakeSender(), memorias, titulares,
+        FakeFaturaRepository([fatura]), FakeInterrupcaoRepository([outage]), uow,
+        clock=lambda: dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
+    )
     outage_svc = OutageService(FakeInterrupcaoRepository([outage]))
     ticketing = TicketingService(chamados, handoffs, titulares, uow)
     memory = MemoryService(memorias, uow)
@@ -126,6 +143,7 @@ def ctx() -> Iterator[SimpleNamespace]:
     app = create_app()
     app.dependency_overrides[get_billing_service] = lambda: billing
     app.dependency_overrides[get_invoice_document_service] = lambda: invoice_doc
+    app.dependency_overrides[get_proactive_service] = lambda: proactive
     app.dependency_overrides[get_outage_service] = lambda: outage_svc
     app.dependency_overrides[get_ticketing_service] = lambda: ticketing
     app.dependency_overrides[get_memory_service] = lambda: memory

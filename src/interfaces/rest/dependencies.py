@@ -17,10 +17,13 @@ from src.application.services import (
     InvoiceDocumentService,
     MemoryService,
     OutageService,
+    ProactiveService,
     TicketingService,
 )
 from src.config import settings
 from src.infrastructure.db import SessionLocal
+from src.infrastructure.events.nats_bus import NatsEventBus
+from src.infrastructure.events.omni_sender import HttpxOmniSender
 from src.infrastructure.knowledge import FilesystemKnowledgeRetrieval
 from src.infrastructure.pdf.weasyprint_renderer import WeasyPrintInvoiceRenderer
 from src.infrastructure.repositories import (
@@ -102,3 +105,15 @@ def get_ticketing_service(session: Session = Depends(get_session)) -> TicketingS
 
 def get_memory_service(session: Session = Depends(get_session)) -> MemoryService:
     return MemoryService(SqlMemoriaRepository(session), SqlAlchemyUnitOfWork(session))
+
+
+def get_proactive_service(session: Session = Depends(get_session)) -> ProactiveService:
+    return ProactiveService(
+        NatsEventBus(settings.nats_url),
+        HttpxOmniSender(settings.omni_url, settings.omni_api_key),
+        SqlMemoriaRepository(session),
+        SqlTitularRepository(session),
+        SqlFaturaRepository(session),
+        SqlInterrupcaoRepository(session),
+        SqlAlchemyUnitOfWork(session),
+    )

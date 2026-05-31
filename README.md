@@ -53,6 +53,10 @@ make compose-up        # database + seed (one-shot) + backend + frontend + mcp-s
 - **Fatura em PDF** (`generate_invoice_pdf`): render realista A4 (PIX QR + boleto + juros)
   via WeasyPrint, persistido no **MinIO** e servido em `http://localhost/files/...` (proxy do
   gateway); `?presigned=true` devolve link com expiração. Ver `docs/specs/SPEC-008-invoice-pdf.md`.
+- **Notificações proativas** (`/api/proactive`): o operador dispara, pelo console, "baixa de
+  pagamento" / "status de interrupção" → evento `utilitycx.*` no **NATS** → **worker
+  determinístico** (sem LLM) envia a mensagem canônica via Omni e grava em
+  `conversation_memory`. Ver `docs/specs/SPEC-009-proactive-notifications.md` (ADR-0005).
 - **Agente CX** em `agent/AGENTS.md` (+ `agent/mcp.config.json`) — papel, política e guardrails
   que orquestram as tools do `/mcp`. Avaliação ao vivo (dirige `claude -p`, sem key — ADR-0007):
   `make agent-evals` (requer o stack no ar + Claude Code autenticado). Ver `docs/specs/SPEC-004-agent-cx.md`.

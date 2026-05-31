@@ -73,6 +73,9 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-faturas}
       FILES_PUBLIC_BASE_URL: ${FILES_PUBLIC_BASE_URL:-http://localhost/files}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      OMNI_URL: ${OMNI_URL:-http://omni:8882}
+      OMNI_API_KEY: ${OMNI_API_KEY:-}
     depends_on:
       database:
         condition: service_healthy
@@ -80,11 +83,39 @@ services:
         condition: service_completed_successfully
       minio:
         condition: service_healthy
+      nats:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
       interval: 5s
       timeout: 5s
       retries: 15
+
+  # Event bus das notificações proativas (SPEC-009 / ADR-0005). JetStream on.
+  nats:
+    image: nats:latest
+    container_name: khal-nats
+    restart: unless-stopped
+    command: ["-js"]
+
+  # Worker determinístico: consome utilitycx.* -> Omni + conversation_memory (sem LLM).
+  notifications-worker:
+    build: .
+    container_name: khal-notifications-worker
+    restart: unless-stopped
+    command: ["python", "-m", "src.infrastructure.events.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      OMNI_URL: ${OMNI_URL:-http://omni:8882}
+      OMNI_API_KEY: ${OMNI_API_KEY:-}
+    depends_on:
+      database:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
 
   frontend:
     build: ./ui

@@ -96,8 +96,9 @@ class TestBillingService:
         with pytest.raises(NotFoundError):
             _billing().find_customer_by_phone("551999999999")
 
-    def test_find_by_phone_invalido_422(self) -> None:
-        with pytest.raises(InvariantError):
+    def test_find_by_phone_nao_identificado_404(self) -> None:
+        # SPEC-015: identidade flexível (aceita LID); o que não resolve é 404, não 422.
+        with pytest.raises(NotFoundError):
             _billing().find_customer_by_phone("123")
 
     def test_list_contracts(self) -> None:

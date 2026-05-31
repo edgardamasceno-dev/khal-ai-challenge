@@ -13,6 +13,7 @@ from typing import Any
 from src.application.ports import (
     ChamadoRepository,
     ChannelHealthPort,
+    ChatDirectoryPort,
     EventBus,
     FaturaRepository,
     HandoffRepository,
@@ -32,6 +33,7 @@ from src.domain.notifications.entities import EventoCX
 from src.domain.notifications.templates import render_notificacao
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.errors import InvariantError, NotFoundError
+from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
 from src.domain.shared.value_objects import Protocolo, Telefone, TipoChamado
 from src.domain.ticketing.entities import Chamado, Handoff
 
@@ -88,19 +90,31 @@ class BillingService:
         unidades: UnidadeRepository,
         faturas: FaturaRepository,
         uow: UnitOfWork | None = None,
+        directory: ChatDirectoryPort | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._titulares = titulares
         self._unidades = unidades
         self._faturas = faturas
         self._uow = uow
+        self._directory = directory
         self._clock: Clock = clock or _utcnow
 
-    def find_customer_by_phone(self, telefone: str) -> Titular:
-        normalizado = Telefone(telefone)
-        titular = self._titulares.find_by_phone(normalizado.value)
+    def find_customer_by_phone(self, identificador: str) -> Titular:
+        """Resolve o titular a partir do identificador do remetente (SPEC-015).
+
+        Aceita telefone (com/sem 9º dígito) ou LID do WhatsApp: tenta pelas
+        variantes do nono dígito; se não achar, resolve o LID -> telefone canônico
+        pelo Omni e tenta de novo. Guardrail intacto (só o titular do remetente).
+        """
+        raw = normalizar_msisdn(identificador)
+        titular = self._titulares.find_by_phone_em(variantes_nono_digito(raw))
+        if titular is None and self._directory is not None:
+            canonical = self._directory.resolve_canonical(identificador)
+            if canonical:
+                titular = self._titulares.find_by_phone_em(variantes_nono_digito(canonical))
         if titular is None:
-            raise NotFoundError(f"Nenhum titular para o telefone {normalizado.mascarado()}")
+            raise NotFoundError(f"Nenhum titular para o remetente …{raw[-4:]}")
         return titular
 
     def list_personas(self) -> list[Titular]:

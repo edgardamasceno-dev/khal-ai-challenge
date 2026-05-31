@@ -87,6 +87,14 @@ class TestBillingRepos:
         assert [t.nome for t in titulares] == ["Ana Souza"]
         assert titulares[0].telefone.value == "555199990001"
 
+    def test_find_by_phone_em_variantes(self, session: Session) -> None:
+        _seed(session)  # Ana cadastrada com 555199990001
+        repo = SqlTitularRepository(session)
+        # acha por qualquer variante da lista; ignora as que não casam
+        assert repo.find_by_phone_em(["550000000000", "555199990001"]) is not None
+        assert repo.find_by_phone_em(["550000000000"]) is None
+        assert repo.find_by_phone_em([]) is None
+
     def test_list_contratos_com_unidade(self, session: Session) -> None:
         _seed(session)
         contratos = SqlTitularRepository(session).list_contratos(ANA)

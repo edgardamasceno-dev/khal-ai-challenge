@@ -99,7 +99,7 @@ class TestOutageApi:
 
 
 class TestTicketingApi:
-    def _body(self, key: str, tipo: str = "falta_energia") -> dict[str, str]:
+    def _body(self, key: str, tipo: str = "falta_energia") -> dict[str, object]:
         return {
             "titular_id": ANA_ID, "uc_id": UC_ID, "tipo": tipo,
             "descricao": "sem luz", "idempotency_key": key,
@@ -127,6 +127,47 @@ class TestTicketingApi:
 
     def test_ticket_inexistente_404(self, ctx: SimpleNamespace) -> None:
         assert ctx.client.get("/tickets/LDV20000101ZZZZ").status_code == 404
+
+    def test_resolve_muta_para_resolvido_e_notifica(self, ctx: SimpleNamespace) -> None:
+        # SPEC-020: o operador encerra pelo console -> chamado vira resolvido + aviso.
+        protocolo = ctx.client.post("/tickets", json=self._body("res-1")).json()["ticket"][
+            "protocolo"
+        ]
+        r = ctx.client.post(f"/tickets/{protocolo}/resolve")
+        assert r.status_code == 200 and r.json()["status"] == "resolvido"
+        # persistiu: GET reflete o novo estado.
+        assert ctx.client.get(f"/tickets/{protocolo}").json()["status"] == "resolvido"
+        # notificou o titular no WhatsApp (best-effort).
+        assert len(ctx.ticket_sender.enviados) == 1
+        chat_id, texto = ctx.ticket_sender.enviados[0]
+        assert chat_id == "555199990001" and protocolo in texto
+
+    def test_resolve_idempotente_nao_reenvia(self, ctx: SimpleNamespace) -> None:
+        protocolo = ctx.client.post("/tickets", json=self._body("res-2")).json()["ticket"][
+            "protocolo"
+        ]
+        ctx.client.post(f"/tickets/{protocolo}/resolve")
+        r2 = ctx.client.post(f"/tickets/{protocolo}/resolve")
+        assert r2.status_code == 200 and r2.json()["status"] == "resolvido"
+        assert len(ctx.ticket_sender.enviados) == 1  # zero reenvio
+
+    def test_resolve_inexistente_404(self, ctx: SimpleNamespace) -> None:
+        assert ctx.client.post("/tickets/LDV20000101ZZZZ/resolve").status_code == 404
+
+    def test_create_default_nao_notifica(self, ctx: SimpleNamespace) -> None:
+        # SPEC-020: agente MCP abre com notificar omitido (default false) -> sem aviso.
+        ctx.client.post("/tickets", json=self._body("ntf-1"))
+        assert ctx.ticket_sender.enviados == []
+
+    def test_create_notificar_true_repassa_e_avisa(self, ctx: SimpleNamespace) -> None:
+        # console envia notificar=true -> open_ticket recebe e avisa o titular.
+        body = self._body("ntf-2") | {"notificar": True}
+        r = ctx.client.post("/tickets", json=body)
+        assert r.status_code == 201
+        protocolo = r.json()["ticket"]["protocolo"]
+        assert len(ctx.ticket_sender.enviados) == 1
+        chat_id, texto = ctx.ticket_sender.enviados[0]
+        assert chat_id == "555199990001" and protocolo in texto
 
     def test_handoff(self, ctx: SimpleNamespace) -> None:
         r = ctx.client.post("/handoffs", json={"motivo": "fora de escopo"})

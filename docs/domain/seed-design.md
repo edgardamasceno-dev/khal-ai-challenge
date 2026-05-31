@@ -22,12 +22,20 @@ Fonte única, lida do `.env`, consumida por **seed e evals**:
 SEED_PERSONAS="Nome:telefone;Nome:telefone;..."   # E.164 sem '+', >=1, ate ~100
 ```
 
-- Default (`.env.example`): as 3 canônicas (Ana/Carlos/Joana) — evals com cenários conhecidos.
-- Cada persona é derivada por `perfil_de(telefone, seed)` (função pura, `src/domain/persona`):
-  bairro/cidade/classe, `n_ucs` (1..2), consumo base, **cenário de fatura**
+- Default (`.env.example`): as 3 canônicas (Ana/Carlos/Joana) — evals com cenários **fixos**.
+- Cada persona ganha um `PerfilPersona` determinístico (`src/domain/persona`):
+  bairro/cidade/classe, `n_ucs` (1..4), consumo base, **cenário de fatura**
   (`em_dia`/`uma_aberta`/`uma_vencida`), `outage_ativa` no bairro, `corte_religacao`.
-- **Persona única** (ex.: só o número real do operador): recebe **perfil rico** (fatura
-  vencida + outage ativa) para exercitar as tools na demo.
+- **Precedência do perfil (ADR-0011): canônico-por-nome > rico > derivado.**
+  - **Canônico-por-nome** (as 3 default, por `persona_key`): cenário **fixo**, independente do
+    telefone — **Ana** (residencial, Jardim das Flores, fatura vencida, **outage ativa**),
+    **Carlos** (comercial, **multi-UC** `n_ucs≥2`, em dia), **Joana** (rural, **corte+religação**).
+    O CPF e o consumo continuam derivados do telefone (estáveis/idempotentes); só os campos de
+    *cenário* são fixados. A demo e os evals (incl. J2 de outage) são fiéis a esses cenários.
+  - **Rico** (`rico=True`, persona única **não-canônica**): fatura vencida + outage ativa,
+    para exercitar as tools na demo.
+  - **Derivado** (qualquer outra persona): tudo sorteado por `perfil_de(telefone, seed)`
+    (função pura) — bairro/classe/cenário dependem do telefone+seed.
 - Números reais de demo vivem **só no `.env`** local (gitignored), nunca no repositório.
 
 ## CPF ficticio valido
@@ -37,11 +45,11 @@ Geramos 9 digitos base a partir do RNG e calculamos os 2 digitos verificadores p
 ## Conteudo gerado por persona
 
 - **Titular** + contatos + `persona_key`.
-- **UC(s)**: Ana 1, Carlos 2, Joana 1. Bairro de Ana = "Jardim das Flores".
+- **UC(s)**: quantidade (1..4) e bairro são **derivados** por `perfil_de` para personas adicionais; para as 3 canônicas são **fixos** (ADR-0011) — Ana em **"Jardim das Flores"** (cenário de outage canônico, `_LOCAIS[0]`), Carlos comercial multi-UC (`n_ucs≥2`), Joana rural. O modo **persona única não-canônica** (`rico=True`) também usa "Jardim das Flores" + outage.
 - **Leituras + Faturas**: uma por mes de referencia (24 meses), com:
   - **sazonalidade**: consumo maior no verao (dez-mar) por ar-condicionado;
   - **bandeira** correlacionada (vermelha em meses secos/quentes);
-  - **status**: meses antigos `paga`, mes atual de Ana `em_aberto`, um mes `vencida`;
+  - **status**: derivado do `cenario_fatura` da persona, na UC primária (`_status_fatura`): `em_dia` → todas `paga`; `uma_aberta` → mes-ancora `em_aberto`; `uma_vencida` → mes-ancora `em_aberto` e o mes anterior `vencida`; demais meses `paga`;
   - `linha_digitavel` e `pix_copia_cola` ficticios.
 - **Pagamentos**: um por fatura paga, com `idempotency_key`.
 - **Interrupcoes**: 1 **ativa** no bairro de Ana (nao_programada, com previsao de retorno) + 1-2 historicas encerradas.
@@ -56,7 +64,7 @@ Geramos 9 digitos base a partir do RNG e calculamos os 2 digitos verificadores p
 
 ```bash
 make db-up
-make seed     # python -m scripts.seed (le .env)
+python -m src.infrastructure.seed   # le .env (SEED_PERSONAS, SEED_RANDOM_SEED, ...)
 ```
 
 Saida esperada: resumo por tabela (linhas inseridas/atualizadas) e os telefones efetivamente mapeados (mascarados em log).

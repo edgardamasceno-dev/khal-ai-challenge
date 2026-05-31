@@ -23,7 +23,7 @@ Implementar a API REST legada em arquitetura hexagonal/DDD (Python 3.12 + FastAP
 
 Endpoints (cada um alimenta uma tool MCP):
 `GET /customers?phone=`, `/customers/{id}`, `/customers/{id}/contracts`, `/customers/{id}/tickets`,
-`/units/{id}`, `/units/{id}/invoices`, `/invoices/{id}`, `/invoices/{id}/pdf` (501 reservado),
+`/units/{id}`, `/units/{id}/invoices`, `/invoices/{id}`, `/invoices/{id}/pdf` (placeholder; PDF real em SPEC-008/017),
 `GET /outages?bairro=`, `POST /tickets` (idempotente), `GET /tickets/{protocolo}`,
 `POST /handoffs`, `GET|PUT /conversations/{chat}/memory`, `GET /health`.
 

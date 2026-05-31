@@ -44,11 +44,11 @@ flowchart TB
   - `Artigo`: slug, titulo, corpo markdown, tags.
 - **Conversation (subdominio de suporte)**
   - `ConversationMemory`: estado curto por `chatId` (ex.: ultima UC consultada, ultimo protocolo).
-  - `ToolCallAudit`: registro de cada chamada de ferramenta.
+  - `ToolCallAudit`: registro de cada chamada de ferramenta MCP (tabela `tool_call_audit`). Materializado em T3 (ADR-0012): ORM + sink atrás do port `ToolCallAuditSink`, gravado por um RECORDER que mascara PII (telefone → sufixo; CPF nunca em claro), mede `latency_ms`, deriva `result_status` (`ok`/`error`/`denied`) e emite log estruturado — tudo **best-effort** (auditoria nunca derruba a tool nem altera guardrails).
 
 ## Value objects
 
-`CPF`, `Telefone` (E.164 sem '+'), `Endereco`, `Dinheiro` (BRL, inteiro em centavos), `MesReferencia` (YYYY-MM), `NumeroUC`, `Protocolo`, `Consumo` (kWh), `Bandeira`, `JanelaSLA`.
+`CPF`, `Telefone` (E.164 sem '+'), `Dinheiro` (BRL, inteiro em centavos), `MesReferencia` (YYYY-MM), `Protocolo`, `TipoChamado` (enum; expoe `sla_horas`), `StatusChamado` (enum: `aberto`/`resolvido`).
 
 Regra: value objects validam invariantes na construcao (ex.: `CPF` rejeita digito verificador invalido).
 

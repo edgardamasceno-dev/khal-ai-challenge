@@ -51,7 +51,7 @@ ADR-0006). A rota direta aos CDNs de mídia é **opt-in**, explícita e document
 
 ## 4. Escopo
 
-- `sandbox/compose.sandbox.yml`: `NO_PROXY` do `sandbox` += CDNs de mídia (comentado).
+- `sandbox/compose.sandbox.yml`: `NO_PROXY` do `sandbox` += CDNs de mídia (ativo; inócuo sem rota direta).
 - `sandbox/enable-media.sh` + `sandbox/disable-media.sh`: liga/desliga a rota direta (opt-in).
 - `sandbox/RUNBOOK.md` + `README`: como e quando usar; o trade-off.
 - `docs/adrs/ADR-0010-media-egress-optin.md`.

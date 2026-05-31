@@ -49,6 +49,7 @@ from tests.unit.fakes import (
     FakeInterrupcaoRepository,
     FakeKnowledgeRetrieval,
     FakeMemoriaRepository,
+    FakeOmniSender,
     FakeTitularRepository,
     FakeUnidadeRepository,
     FakeUnitOfWork,
@@ -179,7 +180,11 @@ def ctx() -> Iterator[SimpleNamespace]:
     )
     outage_svc = OutageService(FakeInterrupcaoRepository([outage]))
     control = _FakeChannelControl()
-    ticketing = TicketingService(chamados, handoffs, titulares, uow, control=control)
+    # SPEC-020: injeta o sender p/ assertir notificacao (resolve/notificar) na API.
+    ticket_sender = FakeOmniSender()
+    ticketing = TicketingService(
+        chamados, handoffs, titulares, uow, control=control, sender=ticket_sender
+    )
     chat_msgs = [
         MensagemChat(id="m1", texto="Oi, preciso da 2ª via", do_cliente=True,
                      em=dt.datetime(2026, 5, 31, 3, tzinfo=dt.UTC)),
@@ -209,5 +214,5 @@ def ctx() -> Iterator[SimpleNamespace]:
     with TestClient(app) as client:
         yield SimpleNamespace(
             client=client, chamados=chamados, handoffs=handoffs, bus=bus,
-            control=control, fatura_id=FAT_ID,
+            control=control, fatura_id=FAT_ID, ticket_sender=ticket_sender,
         )

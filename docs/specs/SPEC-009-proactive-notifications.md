@@ -30,12 +30,14 @@ No proximo turno o agente le o contexto (ex.: "fatura paga", "luz voltou") sem r
 ## 3. Escopo
 
 ### Back
-- **Dominio** `notifications`: `EventoCX` (tipo, telefone, chat_id, dados, idempotency_key) e
-  `render_notificacao(evento) -> str` (templates canonicos por tipo/subtipo).
+- **Dominio** `notifications`: `EventoCX` (tipo, subtipo, telefone, nome, idempotency_key,
+  dados; `chat_id` derivado do telefone) e `render_notificacao(evento) -> str` (templates
+  canonicos por tipo/subtipo).
 - **Ports**: `EventBus.publish(subject, payload)`, `OmniSender.send_text(chat_id, texto)`.
-- **Application** `ProactiveService`: `disparar` (publica em `utilitycx.<tipo>`), `processar`
-  (render + send + `conversation_memory`), `candidatos(phone)` (faturas em aberto -> pagamento;
-  interrupcao no bairro -> outage).
+- **Application** `ProactiveService`: `disparar` (publica em `utilitycx.<tipo>`; a acao de
+  dominio que muta o estado — baixa de fatura / abrir-encerrar interrupcao — entra via SPEC-010
+  antes da publicacao), `processar` (render + send + `conversation_memory`), `candidatos(phone)`
+  (faturas em aberto -> pagamento; interrupcao no bairro -> outage).
 - **Infra**: `NatsEventBus`, `HttpxOmniSender`, `events/worker.py` (subscriber).
 - **REST** `/api/proactive`: `GET /candidates?phone=`, `POST /events`.
 - **Compose**: servico `nats` + `notifications-worker` (mesma imagem, entrypoint do worker).
@@ -48,14 +50,19 @@ No proximo turno o agente le o contexto (ex.: "fatura paga", "luz voltou") sem r
 
 ## 4. Templates determinISticos (sem LLM)
 
-- **pagamento.confirmado**: "Oi {nome}! Confirmamos o pagamento da sua fatura de {mes} no
-  valor de {valor}. Obrigado! 🙌"
-- **outage.aberta**: "{nome}, identificamos uma interrupcao no seu bairro ({bairro}). Equipe
-  acionada; previsao de retorno {previsao}. Acompanhe por aqui."
-- **outage.encerrada**: "{nome}, o fornecimento no seu bairro ({bairro}) foi normalizado. Se
-  ainda estiver sem energia, e so avisar."
+- **pagamento.confirmado**: "Oi, {nome}! ✅ Confirmamos o pagamento da sua fatura de {mes}
+  no valor de {valor}. Obrigado! 🙌"
+- **pagamento.vencida**: "Oi, {nome}! ⚠️ Sua fatura de {mes} no valor de {valor} está
+  *vencida*. Para evitar juros e multa por atraso (e risco de suspensão do fornecimento),
+  pague pelo PIX ou boleto o quanto antes. Precisa da 2ª via? É só pedir por aqui. 🙂"
+- **outage.aberta**: "{nome}, identificamos uma interrupção de energia no seu bairro
+  ({bairro}). Nossa equipe já foi acionada. Previsão de retorno: {previsao}. Pode acompanhar
+  por aqui." (o trecho de previsão é omitido quando não há previsão)
+- **outage.encerrada**: "{nome}, boa notícia: o fornecimento no seu bairro ({bairro}) foi
+  normalizado. ⚡ Se ainda estiver sem energia, é só me avisar."
 
-Cada evento grava em `conversation_memory`: chave `proativo.{tipo}`, valor `{texto, em, dados}`.
+Cada evento grava em `conversation_memory`: chave `proativo.{tipo}.{subtipo}`, valor
+`{texto, em, dados, idempotency_key}`.
 
 ## 5. Fora de escopo
 

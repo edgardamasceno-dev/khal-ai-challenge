@@ -14,7 +14,7 @@ from src.application.services import (
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.errors import InvariantError, NotFoundError
-from src.domain.shared.value_objects import CPF, Dinheiro, Telefone
+from src.domain.shared.value_objects import CPF, Dinheiro, StatusChamado, Telefone
 from tests.unit.fakes import (
     FakeChamadoRepository,
     FakeChannelControl,
@@ -22,6 +22,7 @@ from tests.unit.fakes import (
     FakeHandoffRepository,
     FakeInterrupcaoRepository,
     FakeMemoriaRepository,
+    FakeOmniSender,
     FakeTitularRepository,
     FakeUnidadeRepository,
     FakeUnitOfWork,
@@ -192,6 +193,19 @@ class TestTicketingService:
         )
         return svc, handoffs, control
 
+    def _svc_sender(
+        self,
+    ) -> tuple[TicketingService, FakeUnitOfWork, FakeChamadoRepository, FakeOmniSender]:
+        # SPEC-020: variante com OmniSender p/ assertir notificacao (best-effort).
+        uow = FakeUnitOfWork()
+        chamados = FakeChamadoRepository()
+        sender = FakeOmniSender()
+        svc = TicketingService(
+            chamados, FakeHandoffRepository(), FakeTitularRepository([_ana()]),
+            uow, sender=sender,
+        )
+        return svc, uow, chamados, sender
+
     def test_open_ticket_cria(self) -> None:
         svc, uow, _ = self._svc()
         chamado, criado = svc.open_ticket(
@@ -290,6 +304,104 @@ class TestTicketingService:
         svc.request_handoff(chamado_id=None, motivo="x", remetente="558193112159")
         assert svc.resolver_handoffs_do_remetente("550000000000") == 0
         assert len(svc.list_handoffs()) == 1
+
+    # --- SPEC-020: open_ticket(notificar=...) ---
+
+    def test_open_ticket_notificar_true_avisa_ao_criar(self) -> None:
+        svc, _, _, sender = self._svc_sender()
+        chamado, criado = svc.open_ticket(
+            titular_id=ANA_ID, uc_id=UC_ID, tipo="falta_energia",
+            descricao="sem luz", idempotency_key="n1", notificar=True,
+        )
+        assert criado is True
+        # avisou o titular pelo telefone com a mensagem de "aberto".
+        assert len(sender.enviados) == 1
+        chat_id, texto = sender.enviados[0]
+        assert chat_id == "555199990001"
+        assert chamado.protocolo in texto and "Ana" in texto
+
+    def test_open_ticket_default_nao_notifica(self) -> None:
+        # default notificar=False: o agente MCP nao avisa (ja responde na conversa).
+        svc, _, _, sender = self._svc_sender()
+        svc.open_ticket(
+            titular_id=ANA_ID, uc_id=UC_ID, tipo="falta_energia",
+            descricao="sem luz", idempotency_key="n2",
+        )
+        assert sender.enviados == []
+
+    def test_open_ticket_idempotente_nunca_notifica(self) -> None:
+        # mesmo com notificar=True, o caminho idempotente nao reenvia (nao recria).
+        svc, _, _, sender = self._svc_sender()
+        svc.open_ticket(
+            titular_id=ANA_ID, uc_id=UC_ID, tipo="falta_energia",
+            descricao="x", idempotency_key="n3", notificar=True,
+        )
+        assert len(sender.enviados) == 1  # so na criacao
+        _, criado = svc.open_ticket(
+            titular_id=ANA_ID, uc_id=UC_ID, tipo="falta_energia",
+            descricao="x", idempotency_key="n3", notificar=True,
+        )
+        assert criado is False
+        assert len(sender.enviados) == 1  # idempotente: zero reenvio
+
+    # --- SPEC-020: resolve_ticket ---
+
+    def _abre(self, svc: TicketingService, key: str) -> str:
+        chamado, _ = svc.open_ticket(
+            titular_id=ANA_ID, uc_id=UC_ID, tipo="falta_energia",
+            descricao="sem luz", idempotency_key=key,
+        )
+        return chamado.protocolo
+
+    def test_resolve_ticket_muta_commit_e_notifica(self) -> None:
+        svc, uow, chamados, sender = self._svc_sender()
+        protocolo = self._abre(svc, "r1")
+        commits_antes = uow.commits
+
+        resolvido = svc.resolve_ticket(protocolo)
+
+        assert resolvido.status == StatusChamado.resolvido.value
+        # persistiu no repo (leitura subsequente reflete o novo estado).
+        relido = chamados.get_by_protocolo(protocolo)
+        assert relido is not None and relido.status == StatusChamado.resolvido.value
+        assert uow.commits == commits_antes + 1
+        # notificou UMA vez, com o texto de "resolvido".
+        assert len(sender.enviados) == 1
+        chat_id, texto = sender.enviados[0]
+        assert chat_id == "555199990001"
+        assert protocolo in texto and "resolvido" in texto.lower()
+
+    def test_resolve_ticket_idempotente_nao_remuta_nem_reenvia(self) -> None:
+        svc, uow, chamados, sender = self._svc_sender()
+        protocolo = self._abre(svc, "r2")
+        primeiro = svc.resolve_ticket(protocolo)
+        commits_apos_primeiro = uow.commits
+
+        segundo = svc.resolve_ticket(protocolo)  # ja resolvido
+
+        assert segundo.status == StatusChamado.resolvido.value
+        assert segundo.atualizado_em == primeiro.atualizado_em  # nao remutou
+        assert uow.commits == commits_apos_primeiro  # sem novo commit
+        assert len(sender.enviados) == 1  # zero reenvio
+
+    def test_resolve_ticket_inexistente_levanta_notfound_sem_commit(self) -> None:
+        svc, uow, _, sender = self._svc_sender()
+        with pytest.raises(NotFoundError):
+            svc.resolve_ticket("LDV20000101ZZZZ")
+        assert uow.commits == 0 and sender.enviados == []
+
+    def test_resolve_ticket_sem_sender_persiste_sem_notificar(self) -> None:
+        # best-effort: sem sender o encerramento ocorre e set_status persiste (no-op).
+        svc, uow, chamados = self._svc()
+        protocolo = self._abre(svc, "r3")
+        commits_antes = uow.commits
+
+        resolvido = svc.resolve_ticket(protocolo)
+
+        assert resolvido.status == StatusChamado.resolvido.value
+        relido = chamados.get_by_protocolo(protocolo)
+        assert relido is not None and relido.status == StatusChamado.resolvido.value
+        assert uow.commits == commits_antes + 1
 
 
 class TestMemoryService:

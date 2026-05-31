@@ -43,7 +43,15 @@ def parse_personas(raw: str) -> list[Persona]:
 def carregar_personas(
     raw: str, seed: int
 ) -> list[tuple[Persona, PerfilPersona]]:
-    """Personas + perfis derivados. Persona única -> perfil rico (demo)."""
+    """Personas + perfis derivados.
+
+    Precedência de perfil (forte → fraco): **canônico por nome** (Ana/Carlos/Joana
+    recebem o cenário canônico fixo) > **rico** (persona única não-canônica) >
+    derivado. O `nome` é repassado para `perfil_de` resolver o overlay canônico
+    independente do telefone (SPEC-006 / ADR-0011).
+    """
     personas = parse_personas(raw)
     rico = len(personas) == 1
-    return [(p, perfil_de(p.telefone, seed, rico=rico)) for p in personas]
+    return [
+        (p, perfil_de(p.telefone, seed, rico=rico, nome=p.nome)) for p in personas
+    ]

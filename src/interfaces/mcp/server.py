@@ -7,17 +7,56 @@ canal/Omni (contexto confiavel), nao e input livre do agente.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from src.application.ports import AuditRecord, ToolCallAuditSink
+from src.interfaces.mcp.audit import AuditedCxTools
 from src.interfaces.mcp.client import HttpxLegacyApiClient
 from src.interfaces.mcp.tools import CxTools
 
+logger = logging.getLogger("luz_do_vale.mcp.server")
+
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
 
-_tools = CxTools(HttpxLegacyApiClient(BACKEND_URL))
+
+class _SessionPerWriteAuditSink:
+    """Sink de auditoria com sessao curta por escrita (T3).
+
+    Abre uma sessao SQLAlchemy isolada por `record()` para nao acoplar a
+    auditoria a transacao da tool. Se o DB nao estiver configurado/acessivel
+    no boot (DATABASE_URL ausente), degrada para no-op (apenas-log). Falhas
+    pontuais propagam para o RECORDER, que as engole (best-effort).
+    """
+
+    def __init__(self) -> None:
+        # Import tardio: o MCP server roda mesmo sem DB no caminho da tool.
+        from src.infrastructure.db import SessionLocal
+        from src.infrastructure.repositories import SqlToolCallAuditSink
+
+        self._SessionLocal = SessionLocal
+        self._SqlSink = SqlToolCallAuditSink
+
+    def record(self, registro: AuditRecord) -> None:
+        with self._SessionLocal() as session:
+            self._SqlSink(session).record(registro)
+
+
+def _build_audit_sink() -> ToolCallAuditSink | None:
+    """Constroi o sink de auditoria; degrada para None (apenas-log) se o DB
+    nao estiver configurado. Nunca quebra o boot do MCP server."""
+    try:
+        return _SessionPerWriteAuditSink()
+    except Exception:  # noqa: BLE001 — sem DB => observabilidade so por log.
+        logger.warning("tool_call_audit sem persistencia (apenas-log)", exc_info=True)
+        return None
+
+
+_audit_sink = _build_audit_sink()
+_tools = AuditedCxTools(CxTools(HttpxLegacyApiClient(BACKEND_URL)), sink=_audit_sink)
 mcp = FastMCP("luz-do-vale", host="0.0.0.0", port=8000)
 
 

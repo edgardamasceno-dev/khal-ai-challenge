@@ -16,7 +16,7 @@ Eventos de dominio (`OutageOpened`, `PaymentRegistered`) sao publicados no NATS 
 1. Envia uma mensagem **determinística** (template proprio, sem LLM) via REST do Omni.
 2. Grava o evento em `conversation_memory`/contexto compartilhado.
 
-No proximo turno, o agente le esse contexto e ja sabe, por exemplo, que a fatura foi paga - sem reprocessar nada.
+No proximo turno, esse contexto gravado em `conversation_memory` chega ao agente pela **entrada confiavel do canal** (Omni): o agente **nao** le a memoria por uma tool MCP propria (nao ha tool de memoria) - a leitura fica no **backend** (REST / `MemoryService`), que injeta o contexto no turno. Assim o agente ja sabe, por exemplo, que a fatura foi paga - sem reprocessar nada.
 
 ## Consequences
 

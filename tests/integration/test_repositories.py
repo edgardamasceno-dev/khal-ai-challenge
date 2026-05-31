@@ -5,7 +5,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from src.domain.shared.value_objects import TipoChamado
+from src.domain.shared.value_objects import StatusChamado, TipoChamado
 from src.domain.ticketing.entities import Chamado, Handoff
 from src.infrastructure.orm import (
     ContratoORM,
@@ -222,6 +222,29 @@ class TestTicketingRepos:
         assert repo.get_by_protocolo("LDV20260530AAAA") is not None
         assert repo.get_by_idempotency_key("idem-1") is not None
         assert len(repo.list_for_titular(ANA)) == 1
+
+    def test_set_status_persiste_status_e_atualizado_em(self, session: Session) -> None:
+        # SPEC-020: encerrar muta status + atualizado_em por protocolo e devolve o Chamado.
+        _seed(session)
+        repo = SqlChamadoRepository(session)
+        repo.add(self._chamado("LDV20260530BBBB"), "idem-2")
+        novo_ts = dt.datetime(2026, 5, 31, 18, tzinfo=dt.UTC)
+
+        atualizado = repo.set_status(
+            "LDV20260530BBBB", StatusChamado.resolvido.value, novo_ts
+        )
+
+        assert atualizado is not None
+        assert atualizado.status == StatusChamado.resolvido.value
+        assert atualizado.atualizado_em == novo_ts
+        # leitura subsequente reflete o novo estado.
+        relido = repo.get_by_protocolo("LDV20260530BBBB")
+        assert relido is not None and relido.status == StatusChamado.resolvido.value
+
+    def test_set_status_protocolo_inexistente_retorna_none(self, session: Session) -> None:
+        assert SqlChamadoRepository(session).set_status(
+            "LDV20000101ZZZZ", StatusChamado.resolvido.value, dt.datetime.now(dt.UTC)
+        ) is None
 
     def test_handoff_add(self, session: Session) -> None:
         _seed(session)

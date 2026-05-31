@@ -21,7 +21,8 @@ Implementacao via **TDD**: a logica das tools e testada contra um client legado 
 ## 3. Escopo
 
 Ferramentas: `find_customer_by_phone`, `list_contracts`, `get_invoice_status`,
-`get_outage_by_region`, `create_ticket`, `get_ticket_status`, `request_human_handoff`.
+`generate_invoice_pdf`, `get_outage_by_region`, `create_ticket`, `get_ticket_status`,
+`request_human_handoff`, `search_knowledge_base`.
 
 Arquitetura (hexagonal): `LegacyApiClient` (port) + adapter httpx; `CxTools`
 (use cases das tools com guardrails) testavel contra um fake; `server.py` (wiring
@@ -37,12 +38,13 @@ Guardrails determinISticos:
 ## 4. Fora de escopo
 
 - Agente em si (`AGENTS.md`/policy - SPEC seguinte) e wiring Omni/Genie no sandbox.
-- `search_knowledge_base` (depende da KB, ADR-0004 / SPEC de Knowledge).
+- `search_knowledge_base` (depende da KB, ADR-0004 / SPEC de Knowledge) — entregue na SPEC-005.
+- `generate_invoice_pdf` (renderizacao + envio de PDF, ADR-0003) — entregue na SPEC-008/017.
 - Memoria/eventos (ADR-0005).
 
 ## 5. Criterios de aceite
 
-- As 7 tools aparecem no `tools/list` e respondem via MCP (validacao e2e no compose).
+- As 9 tools aparecem no `tools/list` e respondem via MCP (validacao e2e no compose).
 - Guardrails ativos: telefone desconhecido nao vaza dados; `create_ticket` exige
   confirmacao; mesma chave nao duplica; protocolo de outro cliente e negado.
 - Suite verde (unit das tools + suites anteriores); ruff e mypy estrito limpos.

@@ -147,6 +147,23 @@ class FakeChamadoRepository:
         self._by_idem[idempotency_key] = chamado
         return chamado
 
+    def set_status(
+        self, protocolo: str, status: str, atualizado_em: dt.datetime
+    ) -> Chamado | None:
+        for idx, c in enumerate(self._items):
+            if c.protocolo == protocolo:
+                atualizado = dataclasses.replace(
+                    c, status=status, atualizado_em=atualizado_em
+                )
+                self._items[idx] = atualizado
+                # mantem o indice por idempotency_key coerente (mesma linha)
+                self._by_idem = {
+                    k: (atualizado if v.protocolo == protocolo else v)
+                    for k, v in self._by_idem.items()
+                }
+                return atualizado
+        return None
+
 
 class FakeHandoffRepository:
     def __init__(self) -> None:

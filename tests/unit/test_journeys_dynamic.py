@@ -44,3 +44,27 @@ def test_cobre_jornadas_comportamentais_fixas() -> None:
     )
     for fixo in fixos:
         assert fixo in nomes
+
+
+# Default do .env.example: as 3 canônicas com nome completo.
+_DEFAULT = (
+    "Ana Souza:555199990001;Carlos Lima:555199990002;Joana Pereira:555199990003"
+)
+
+
+def test_default_emite_j2_para_a_persona_canonica_de_outage() -> None:
+    # Com o default (ADR-0011), Ana tem outage_ativa=True FIXO: a suíte sempre
+    # gera a jornada J2 (falta de energia) — não depende mais de sorte.
+    personas = carregar_personas(_DEFAULT, 42)
+    scs = build_scenarios(personas)
+    j2 = [s for s in scs if s.name.startswith("J2-falta-energia[")]
+    assert len(j2) >= 1
+
+    # A persona de outage é a Ana (telefone canônico) e o bairro citado na
+    # mensagem casa com o bairro do perfil dela ("Jardim das Flores").
+    ana = next(perfil for p, perfil in personas if p.nome == "Ana Souza")
+    ana_tel = next(p.telefone for p, _ in personas if p.nome == "Ana Souza")
+    cenario_ana = next(s for s in j2 if ana_tel in s.name)
+    assert cenario_ana.phone == ana_tel
+    assert ana.bairro in cenario_ana.message
+    assert ana.bairro == "Jardim das Flores"

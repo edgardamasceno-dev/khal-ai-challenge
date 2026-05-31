@@ -34,6 +34,7 @@ def create_ticket(
         tipo=body.tipo.value,
         descricao=body.descricao,
         idempotency_key=body.idempotency_key,
+        notificar=body.notificar,
     )
     response.status_code = status.HTTP_201_CREATED if criado else status.HTTP_200_OK
     return CreateTicketResponse(criado_agora=criado, ticket=TicketDTO.from_entity(chamado))
@@ -45,6 +46,15 @@ def get_ticket_status(
     svc: TicketingService = Depends(get_ticketing_service),
 ) -> TicketDTO:
     return TicketDTO.from_entity(svc.get_ticket_status(protocolo))
+
+
+@router.post("/tickets/{protocolo}/resolve", response_model=TicketDTO)
+def resolve_ticket(
+    protocolo: str,
+    svc: TicketingService = Depends(get_ticketing_service),
+) -> TicketDTO:
+    """Encerra o chamado como resolvido e notifica o titular por WhatsApp (SPEC-020)."""
+    return TicketDTO.from_entity(svc.resolve_ticket(protocolo))
 
 
 @router.get("/customers/{titular_id}/tickets", response_model=list[TicketDTO])

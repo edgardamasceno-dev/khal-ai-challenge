@@ -46,18 +46,97 @@ def test_n_ucs_de_1_a_4_cobre_a_faixa() -> None:
     assert vistos == {1, 2, 3, 4}
 
 
-def test_cenarios_canonicos_preservados() -> None:
-    # A derivação de n_ucs (stream dedicado) NÃO desloca cenário/outage/corte
-    # das personas residenciais/rurais existentes (regressão SPEC-013).
+def test_derivacao_pura_baseline_preservada() -> None:
+    # Sem `nome`/`persona_key`, a derivação por hash é a de sempre: o stream
+    # dedicado de n_ucs (SPEC-013) NÃO desloca cenário/outage/corte. Trava o
+    # baseline que o overlay canônico (ADR-0011) NÃO pode alterar.
     esperado = {
-        "555199990001": ("uma_vencida", False, False),  # Ana
-        "555199990002": ("uma_aberta", False, False),  # Carlos
-        "555199990003": ("uma_vencida", False, False),  # Joana
+        "555199990001": ("uma_vencida", False, False),  # Ana (telefone)
+        "555199990002": ("uma_aberta", False, False),  # Carlos (telefone)
+        "555199990003": ("uma_vencida", False, False),  # Joana (telefone)
         EDGAR: ("em_dia", False, False),
     }
     for phone, (cenario, outage, corte) in esperado.items():
         p = perfil_de(phone, SEED)
         assert (p.cenario_fatura, p.outage_ativa, p.corte_religacao) == (cenario, outage, corte)
+
+
+# --- Cenários canônicos por NOME (ADR-0011): fixos, não mais sorteados. ---
+
+ANA_TEL = "555199990001"
+CARLOS_TEL = "555199990002"
+JOANA_TEL = "555199990003"
+
+
+def test_canonico_ana_outage_e_fatura_vencida() -> None:
+    p = perfil_de(ANA_TEL, SEED, nome="Ana Souza")
+    assert p.classe == "residencial"
+    assert p.bairro == "Jardim das Flores"
+    assert p.cenario_fatura == "uma_vencida"
+    assert p.outage_ativa is True
+
+
+def test_canonico_carlos_comercial_multi_uc_em_dia() -> None:
+    p = perfil_de(CARLOS_TEL, SEED, nome="Carlos Lima")
+    assert p.classe == "comercial"
+    assert p.n_ucs >= 2
+    assert len(p.base_kwh) == p.n_ucs
+    assert p.cenario_fatura == "em_dia"
+    assert p.outage_ativa is False
+
+
+def test_canonico_joana_rural_com_corte_religacao() -> None:
+    p = perfil_de(JOANA_TEL, SEED, nome="Joana Pereira")
+    assert p.classe == "rural"
+    assert p.corte_religacao is True
+
+
+def test_canonico_independe_do_telefone() -> None:
+    # O overlay é por NOME (persona_key), não por telefone: Ana com qualquer
+    # telefone mantém o cenário canônico (bairro/outage/fatura).
+    p = perfil_de("5599911112222", SEED, nome="Ana Souza")
+    assert p.bairro == "Jardim das Flores"
+    assert p.outage_ativa is True
+    assert p.cenario_fatura == "uma_vencida"
+
+
+def test_persona_key_equivale_ao_nome() -> None:
+    # Passar persona_key (slug pronto) é equivalente a passar o nome.
+    por_nome = perfil_de(ANA_TEL, SEED, nome="Ana Souza")
+    por_key = perfil_de(ANA_TEL, SEED, persona_key="ana.souza")
+    assert por_nome == por_key
+
+
+def test_nome_nao_canonico_nao_altera_o_perfil_derivado() -> None:
+    # Telefone fora do conjunto canônico: passar um nome qualquer NÃO muda nada
+    # em relação à derivação pura (a fixação é cirúrgica, só os 3 canônicos).
+    for tel in ("555199990099", EDGAR, "5511987654321"):
+        assert perfil_de(tel, SEED, nome="Fulano de Tal") == perfil_de(tel, SEED)
+
+
+def test_canonico_tem_precedencia_sobre_rico() -> None:
+    # Persona única canônica: canônico-por-nome > rico. Carlos não vira "rico"
+    # (que forçaria residencial/uma_vencida/outage); mantém o cenário comercial.
+    p = perfil_de("5599911112222", SEED, rico=True, nome="Carlos Lima")
+    assert p.classe == "comercial"
+    assert p.cenario_fatura == "em_dia"
+    assert p.n_ucs >= 2
+    assert p.outage_ativa is False
+
+
+def test_canonicos_deterministicos_entre_chamadas() -> None:
+    # Idempotência também no caminho canônico (e CPF estável por telefone).
+    for nome, tel in (
+        ("Ana Souza", ANA_TEL),
+        ("Carlos Lima", CARLOS_TEL),
+        ("Joana Pereira", JOANA_TEL),
+    ):
+        a = perfil_de(tel, SEED, nome=nome)
+        b = perfil_de(tel, SEED, nome=nome)
+        assert a == b
+        assert cpf_valido(a.cpf)
+        # CPF segue derivado do telefone (igual ao da derivação pura).
+        assert a.cpf == perfil_de(tel, SEED).cpf
 
 
 def test_perfil_rico_garante_cenario_demonstravel() -> None:

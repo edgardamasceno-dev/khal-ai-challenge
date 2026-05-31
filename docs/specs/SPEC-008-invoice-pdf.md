@@ -46,8 +46,9 @@ SPEC-003); o envio por **`POST /messages/send/media`** do Omni segue o ADR-0003 
   stub 501). Opcional `GET .../pdf/raw` para stream direto (debug).
 - **Gateway** (nginx): `location /files/ { proxy_pass http://minio/faturas/; }`.
 - **Compose**: servico `minio` (+ `mc` para criar o bucket); env no backend/mcp.
-- **MCP**: `generate_invoice_pdf(phone)` -> resolve a fatura atual do titular -> REST ->
-  devolve a URL. (Envio por midia do Omni: ADR-0003, runtime.)
+- **MCP**: `generate_invoice_pdf(phone)` -> resolve a fatura atual do titular -> REST
+  (`POST /invoices/{id}/send`) -> envia o LINK (confiavel) + PDF anexo best-effort via
+  `POST /api/v2/messages/send/media` (evoluido na SPEC-017 / ADR-0010); devolve `url` e `enviado`.
 
 ## 4. Conteudo da fatura (realista, A4)
 
@@ -63,7 +64,8 @@ cola) e **boleto** (codigo de barras + linha digitavel). Marca d'agua por `statu
 ## 5. Fora de escopo
 
 - Assinatura digital/validade fiscal (e demo).
-- Envio real por Omni `send/media` (ADR-0003 / runtime do sandbox; aqui a tool devolve a URL).
+- Envio real por Omni `send/media`: nesta SPEC a tool apenas devolvia a URL; o anexo via
+  send/media FOI entregue depois (SPEC-017 / ADR-0010, opt-in de egress).
 - Versionar PDFs no git (vivem no MinIO; bucket efemero recriavel).
 
 ## 6. Plano TDD (red -> green -> refactor)

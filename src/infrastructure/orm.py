@@ -148,3 +148,23 @@ class MemoriaORM(Base):
     chave: Mapped[str] = mapped_column(Text)
     valor: Mapped[Any] = mapped_column(JSONB)
     atualizado_em: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ToolCallAuditORM(Base):
+    """Auditoria por chamada de ferramenta MCP (T3). Mapeia a tabela existente
+    `tool_call_audit` (db/init/01-schema.sql); o CHECK de result_status mora no banco.
+    """
+
+    __tablename__ = "tool_call_audit"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    trace_id: Mapped[str | None] = mapped_column(Text)
+    chat_id: Mapped[str | None] = mapped_column(Text)
+    tool_name: Mapped[str] = mapped_column(Text)
+    input_redacted: Mapped[Any | None] = mapped_column(JSONB)
+    result_status: Mapped[str] = mapped_column(Text)
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

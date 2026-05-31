@@ -7,15 +7,18 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 from src.application.ports import (
     ChamadoRepository,
+    EventBus,
     FaturaRepository,
     HandoffRepository,
     InterrupcaoRepository,
     InvoicePdfRenderer,
     MemoriaRepository,
     ObjectStorage,
+    OmniSender,
     TitularRepository,
     UnidadeRepository,
     UnitOfWork,
@@ -23,6 +26,8 @@ from src.application.ports import (
 from src.domain.billing.documento import DocumentoFatura, FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
+from src.domain.notifications.entities import EventoCX
+from src.domain.notifications.templates import render_notificacao
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.errors import InvariantError, NotFoundError
 from src.domain.shared.value_objects import Protocolo, Telefone, TipoChamado
@@ -266,3 +271,107 @@ class MemoryService:
             self._uow.rollback()
             raise
         return salvo
+
+
+class ProactiveService:
+    """Notificações proativas determinísticas (SPEC-009 / ADR-0005). Sem LLM.
+
+    `disparar` publica o evento em utilitycx.* (consumido pelo worker). `processar`
+    (worker) renderiza o template canônico, envia pelo Omni e grava na memória.
+    """
+
+    def __init__(
+        self,
+        bus: EventBus,
+        sender: OmniSender,
+        memorias: MemoriaRepository,
+        titulares: TitularRepository,
+        faturas: FaturaRepository,
+        interrupcoes: InterrupcaoRepository,
+        uow: UnitOfWork,
+        clock: Clock | None = None,
+    ) -> None:
+        self._bus = bus
+        self._sender = sender
+        self._memorias = memorias
+        self._titulares = titulares
+        self._faturas = faturas
+        self._interrupcoes = interrupcoes
+        self._uow = uow
+        self._clock: Clock = clock or _utcnow
+
+    @staticmethod
+    def _payload(evento: EventoCX) -> dict[str, object]:
+        return {
+            "tipo": evento.tipo, "subtipo": evento.subtipo, "telefone": evento.telefone,
+            "nome": evento.nome, "idempotency_key": evento.idempotency_key, "dados": evento.dados,
+        }
+
+    def disparar(self, evento: EventoCX) -> dict[str, object]:
+        """Operador dispara o evento: publica no bus + devolve o preview canônico."""
+        self._bus.publish(evento.subject, self._payload(evento))
+        return {"publicado": True, "subject": evento.subject, "preview": render_notificacao(evento)}
+
+    def disparar_por_telefone(
+        self, phone: str, tipo: str, subtipo: str, dados: dict[str, Any]
+    ) -> dict[str, object]:
+        """Resolve o titular (nome) pelo telefone, monta o evento e dispara."""
+        normalizado = Telefone(phone)
+        titular = self._titulares.find_by_phone(normalizado.value)
+        if titular is None:
+            raise NotFoundError("Telefone nao identificado")
+        chave_dado = dados.get("fatura_id") or dados.get("mes") or dados.get("bairro") or ""
+        evento = EventoCX(
+            tipo=tipo, subtipo=subtipo, telefone=normalizado.value, nome=titular.nome,
+            idempotency_key=f"{tipo}.{subtipo}.{normalizado.value}.{chave_dado}", dados=dados,
+        )
+        return self.disparar(evento)
+
+    def processar(self, evento: EventoCX) -> dict[str, object]:
+        """Worker: render determinístico -> envia (Omni) -> grava na memória."""
+        texto = render_notificacao(evento)
+        enviado = self._sender.send_text(evento.chat_id, texto)
+        try:
+            self._memorias.upsert(
+                evento.chat_id, evento.memoria_chave,
+                {"texto": texto, "em": self._clock().isoformat(), "dados": evento.dados,
+                 "idempotency_key": evento.idempotency_key},
+            )
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        return {"enviado": enviado, "texto": texto, "memoria_chave": evento.memoria_chave}
+
+    def candidatos(self, phone: str) -> dict[str, object]:
+        """Eventos elegíveis p/ o cliente: faturas em aberto (pagamento) + interrupção (outage)."""
+        normalizado = Telefone(phone)
+        titular = self._titulares.find_by_phone(normalizado.value)
+        if titular is None:
+            return {"encontrado": False, "motivo": "Telefone nao identificado."}
+        pagamentos: list[dict[str, object]] = []
+        outages: list[dict[str, object]] = []
+        bairros_vistos: set[str] = set()
+        for c in self._titulares.list_contratos(titular.id):
+            uc = c.unidade
+            for f in self._faturas.list_for_unidade(uc.id, None, 24):
+                if f.status in ("em_aberto", "vencida"):
+                    pagamentos.append({
+                        "fatura_id": str(f.id), "numero_uc": uc.numero_uc,
+                        "mes_referencia": f.mes_referencia, "valor": f.valor.formatado(),
+                        "status": f.status,
+                    })
+            if uc.bairro and uc.bairro not in bairros_vistos:
+                bairros_vistos.add(uc.bairro)
+                inter = self._interrupcoes.find_ativa_por_regiao(uc.bairro, uc.cidade, uc.uf)
+                if inter is not None:
+                    prev = inter.previsao_retorno
+                    outages.append({
+                        "bairro": uc.bairro,
+                        "previsao": prev.isoformat() if prev else None,
+                        "status": inter.status,
+                    })
+        return {
+            "encontrado": True, "titular": titular.nome, "telefone": normalizado.value,
+            "pagamentos": pagamentos, "outages": outages,
+        }

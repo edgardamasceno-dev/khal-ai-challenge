@@ -84,6 +84,7 @@ export interface CreateTicketResponse {
 export interface Handoff {
   id: string
   chamado_id: string | null
+  remetente: string | null
   motivo: string | null
   status: string
   operador: string | null
@@ -205,6 +206,15 @@ export const api = {
     request<Handoff>("/handoffs", {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+
+  // SPEC-016: fila de atendimento humano (pendentes) + devolver à IA.
+  listHandoffs: () => request<Handoff[]>("/handoffs"),
+
+  resumeHandoff: (id: string) =>
+    request<Handoff>(`/handoffs/${id}/resume`, {
+      method: "POST",
+      body: JSON.stringify({ operador: "console" }),
     }),
 
   // Notificações proativas (SPEC-009).

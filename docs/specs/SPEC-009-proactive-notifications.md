@@ -1,6 +1,6 @@
 # SPEC-009 - Notificações proativas determinísticas (eventos utilitycx.*)
 
-- Status: Approved (2026-05-30)
+- Status: Approved (2026-05-30) — PR #15
 - Versao alvo: 1.0.0 (fecha o escopo do desafio)
 - ADRs: ADR-0005 (eventos determinIsticos sem LLM -> memoria). Sem ADR novo.
 

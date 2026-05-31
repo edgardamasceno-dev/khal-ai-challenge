@@ -33,6 +33,15 @@ def test_pagamento_confirmado_deterministico() -> None:
     assert render_notificacao(ev) == txt  # determinístico
 
 
+def test_pagamento_vencida_alerta_juros_e_pagamento() -> None:
+    ev = _ev("pagamento", "vencida", mes="04/2026", valor="R$ 286,15")
+    txt = render_notificacao(ev)
+    assert "Edgar" in txt and "04/2026" in txt and "R$ 286,15" in txt
+    assert "vencid" in txt.lower()  # avisa que está vencida
+    assert "juros" in txt.lower() or "multa" in txt.lower()  # alerta de encargos
+    assert render_notificacao(ev) == txt  # determinístico
+
+
 def test_outage_aberta_com_e_sem_previsao() -> None:
     com = render_notificacao(_ev("outage", "aberta", bairro="Centro", previsao="hoje 18h"))
     assert "Centro" in com and "hoje 18h" in com  # texto livre passa direto

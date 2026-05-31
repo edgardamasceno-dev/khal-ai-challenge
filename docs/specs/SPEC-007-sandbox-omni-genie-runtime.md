@@ -1,6 +1,6 @@
 # SPEC-007 - Runtime do sandbox (wiring Omni/Genie + agente CX)
 
-- Status: Approved (2026-05-30)
+- Status: Approved (2026-05-30) — PR #11
 - Versao alvo: 0.8.0 (increment 5 do ADR-0006: o agente atende no WhatsApp)
 - ADRs: ADR-0006 (Docker Compose + sandbox), ADR-0007 (Claude Code, sem key). Sem ADR novo.
 

@@ -28,6 +28,9 @@ export function ChatSection({ phone }: { phone: string }) {
   const seen = useRef<Set<string>>(new Set())
   // altura antes de um "mostrar mais" (prepend) — sinaliza preservar o scroll.
   const prependBefore = useRef<number | null>(null)
+  // momento da última ação de controle (assumir/devolver) — protege contra
+  // double-click disparar a ação oposta e contra o auto-refresh sobrescrever o estado.
+  const lastToggle = useRef(0)
 
   // Gruda no fim quando `msgs` muda (carga inicial, nova mensagem, envio);
   // no "mostrar mais" preserva a posição. useLayoutEffect roda antes do paint.
@@ -83,7 +86,8 @@ export function ChatSection({ phone }: { phone: string }) {
     const id = setInterval(() => {
       Promise.all([api.chatMessages(phone, PAGE), api.chatStatus(phone)])
         .then(([t, s]) => {
-          setPausado(s.pausado)
+          // não sobrescreve logo após uma ação manual (o Omni leva ~1-2s p/ propagar).
+          if (Date.now() - lastToggle.current > 4000) setPausado(s.pausado)
           merge([...t.mensagens].reverse().filter((m) => !seen.current.has(m.id)))
         })
         .catch(() => {})
@@ -108,14 +112,19 @@ export function ChatSection({ phone }: { phone: string }) {
   }
 
   async function toggleControle() {
+    if (busy) return
     setBusy(true)
+    lastToggle.current = Date.now()
     try {
       const s = pausado ? await api.chatRelease(phone) : await api.chatTakeover(phone)
       setPausado(s.pausado)
+      lastToggle.current = Date.now()
       toast.success(s.pausado ? "Você assumiu o atendimento" : "Atendimento devolvido à IA")
+      // cooldown: o botão fica travado por +1.2s para o 2º clique de um
+      // double-click não disparar a ação oposta (assumir logo após devolver).
+      setTimeout(() => setBusy(false), 1200)
     } catch {
       toast.error("Não foi possível alterar o controle")
-    } finally {
       setBusy(false)
     }
   }

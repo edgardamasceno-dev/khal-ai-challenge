@@ -118,6 +118,28 @@ class TestBillingRepos:
             uuid.uuid4(), "k", dt.datetime.now(dt.UTC)
         ) is None
 
+    def test_atualizar_status_persiste(self, session: Session) -> None:
+        _seed(session)  # fatura comeca 'em_aberto'
+        repo = SqlFaturaRepository(session)
+        f = repo.atualizar_status(FAT, "vencida", dt.datetime.now(dt.UTC))
+        assert f is not None and f.status == "vencida"
+        assert session.get(FaturaORM, FAT).status == "vencida"
+
+    def test_atualizar_status_reverter_paga_remove_pagamento(self, session: Session) -> None:
+        _seed(session)
+        repo = SqlFaturaRepository(session)
+        now = dt.datetime.now(dt.UTC)
+        repo.marcar_paga(FAT, "pagamento.confirmado.fat-1", now)  # cria pagamento
+        assert session.query(PagamentoORM).filter_by(fatura_id=FAT).count() == 1
+        f = repo.atualizar_status(FAT, "em_aberto", now)  # reverte baixa
+        assert f is not None and f.status == "em_aberto"
+        assert session.query(PagamentoORM).filter_by(fatura_id=FAT).count() == 0
+
+    def test_atualizar_status_fatura_inexistente(self, session: Session) -> None:
+        assert SqlFaturaRepository(session).atualizar_status(
+            uuid.uuid4(), "vencida", dt.datetime.now(dt.UTC)
+        ) is None
+
 
 class TestOutageRepo:
     def test_find_ativa_por_regiao(self, session: Session) -> None:

@@ -91,6 +91,13 @@ class InvoiceDTO(BaseModel):
         )
 
 
+class InvoicePdfDTO(BaseModel):
+    url: str
+    presigned: bool
+    expires_at: dt.datetime | None = None
+    generated: bool = Field(description="True se renderizou agora; False se veio do storage")
+
+
 class OutageDTO(BaseModel):
     id: uuid.UUID
     bairro: str

@@ -11,9 +11,10 @@ from functools import lru_cache
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from src.application.ports import KnowledgeRetrievalPort
+from src.application.ports import KnowledgeRetrievalPort, ObjectStorage
 from src.application.services import (
     BillingService,
+    InvoiceDocumentService,
     MemoryService,
     OutageService,
     TicketingService,
@@ -21,6 +22,7 @@ from src.application.services import (
 from src.config import settings
 from src.infrastructure.db import SessionLocal
 from src.infrastructure.knowledge import FilesystemKnowledgeRetrieval
+from src.infrastructure.pdf.weasyprint_renderer import WeasyPrintInvoiceRenderer
 from src.infrastructure.repositories import (
     SqlAlchemyUnitOfWork,
     SqlChamadoRepository,
@@ -31,6 +33,7 @@ from src.infrastructure.repositories import (
     SqlTitularRepository,
     SqlUnidadeRepository,
 )
+from src.infrastructure.storage.minio_storage import MinioObjectStorage
 
 
 @lru_cache(maxsize=1)
@@ -56,6 +59,31 @@ def get_billing_service(session: Session = Depends(get_session)) -> BillingServi
         SqlTitularRepository(session),
         SqlUnidadeRepository(session),
         SqlFaturaRepository(session),
+    )
+
+
+@lru_cache(maxsize=1)
+def _object_storage() -> ObjectStorage:
+    # Conexão única ao MinIO (cria o bucket no boot — ADR-0009).
+    return MinioObjectStorage(
+        endpoint=settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        bucket=settings.minio_bucket,
+        public_base_url=settings.files_public_base_url,
+        secure=settings.minio_secure,
+    )
+
+
+def get_invoice_document_service(
+    session: Session = Depends(get_session),
+) -> InvoiceDocumentService:
+    return InvoiceDocumentService(
+        faturas=SqlFaturaRepository(session),
+        unidades=SqlUnidadeRepository(session),
+        titulares=SqlTitularRepository(session),
+        renderer=WeasyPrintInvoiceRenderer(),
+        storage=_object_storage(),
     )
 
 

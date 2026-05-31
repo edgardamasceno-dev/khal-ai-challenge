@@ -7,11 +7,19 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse
 
-from src.application.services import BillingService
-from src.interfaces.rest.dependencies import get_billing_service
-from src.interfaces.rest.schemas import ContractDTO, CustomerDTO, InvoiceDTO, UnitDTO
+from src.application.services import BillingService, InvoiceDocumentService
+from src.interfaces.rest.dependencies import (
+    get_billing_service,
+    get_invoice_document_service,
+)
+from src.interfaces.rest.schemas import (
+    ContractDTO,
+    CustomerDTO,
+    InvoiceDTO,
+    InvoicePdfDTO,
+    UnitDTO,
+)
 
 router = APIRouter(tags=["billing"])
 
@@ -66,15 +74,17 @@ def get_invoice_status(
     return InvoiceDTO.from_entity(svc.get_invoice(fatura_id))
 
 
-@router.get("/invoices/{fatura_id}/pdf")
-def generate_invoice_pdf(fatura_id: uuid.UUID) -> JSONResponse:
-    # Reservado (ADR-0003): render WeasyPrint + envio via Omni sao SPEC propria.
-    return JSONResponse(
-        status_code=501,
-        content={
-            "error": {
-                "code": "NotImplemented",
-                "message": "Geracao/envio de PDF entra em SPEC futura (ADR-0003).",
-            }
-        },
+@router.get("/invoices/{fatura_id}/pdf", response_model=InvoicePdfDTO)
+def generate_invoice_pdf(
+    fatura_id: uuid.UUID,
+    presigned: bool = Query(False, description="Devolve link pré-assinado com expiração"),
+    expires: int = Query(3600, ge=60, le=604800, description="TTL do link pré-assinado (s)"),
+    svc: InvoiceDocumentService = Depends(get_invoice_document_service),
+) -> InvoicePdfDTO:
+    """Render realista + persistência (MinIO). Não re-renderiza se já existe
+    (ADR-0009); `presigned=true` regera só o link com expiração."""
+    doc = svc.obter_ou_gerar(fatura_id, presign=presigned, expires=expires)
+    return InvoicePdfDTO(
+        url=doc.url, presigned=doc.presigned, expires_at=doc.expires_at,
+        generated=doc.gerado_agora,
     )

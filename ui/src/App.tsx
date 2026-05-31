@@ -11,6 +11,7 @@ import {
 } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -97,9 +98,9 @@ export default function App() {
         <Card>
           <CardContent className="flex flex-col gap-2 py-5 sm:flex-row sm:items-end">
             <div className="grid flex-1 gap-1.5">
-              <label htmlFor="phone" className="text-sm font-medium">
+              <Label htmlFor="phone">
                 Identificar cliente por telefone
-              </label>
+              </Label>
               <Input
                 id="phone"
                 value={phone}
@@ -122,15 +123,17 @@ export default function App() {
               {personas.map((p) => (
                 <Tooltip key={p.telefone}>
                   <TooltipTrigger asChild>
-                    <Badge
-                      variant="secondary"
-                      className="cursor-pointer font-mono text-[11px] tabular-nums hover:bg-secondary/70"
-                      onClick={() => {
-                        setPhone(p.telefone)
-                        search(p.telefone)
-                      }}
-                    >
-                      {p.nome.split(" ")[0]} · {p.telefone}
+                    <Badge asChild variant="secondary" className="font-mono text-[11px] tabular-nums">
+                      <button
+                        type="button"
+                        className="cursor-pointer hover:bg-secondary/70"
+                        onClick={() => {
+                          setPhone(p.telefone)
+                          search(p.telefone)
+                        }}
+                      >
+                        {p.nome.split(" ")[0]} · {p.telefone}
+                      </button>
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent>

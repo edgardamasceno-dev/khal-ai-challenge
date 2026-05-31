@@ -16,7 +16,13 @@ O Omni suporta nativamente: `chat.settings.agentPaused = true` faz o agent-dispa
 **pular o agente** (`agent-dispatcher.ts`). Set via `PATCH /api/v2/chats/:id`
 (`{settings:{agentPaused:true}}`), genérico (Baileys). A persistência de mensagens é
 **desacoplada** do agente — inbound e mensagens do humano são salvas mesmo com a IA
-pausada. Retomar: `agentPaused:false`.
+pausada.
+
+**Retomar exige `POST /api/v2/chats/clear-session {instanceId, chatId}`** (não só o
+PATCH): além de `agentPaused:false` + `agentResumedAt`, ele **reseta a sessão do agente**
+(`clearAgentSession`). Sem o reset, a sessão do Genie fica presa e a IA **não volta a
+responder** mesmo com `agentPaused=false`. O `chatId` é o `externalId` (mesmo id que o
+dispatcher usa para computar o `sessionId`).
 
 ## 3. Escopo
 

@@ -64,56 +64,72 @@ class HttpxOmniChats:
 
     # --- ChannelControlPort: pausar/retomar a IA por conversa (SPEC-016) --------- #
 
-    def _chat_id(self, remetente: str) -> str | None:
-        """Id do chat (UUID Omni) casando o remetente por externalId ou canonicalId
-        (tolerando o nono dígito no canonical)."""
+    def _chat(self, remetente: str) -> dict[str, Any] | None:
+        """O chat cujo externalId/canonicalId casa o remetente (tolera o nono dígito)."""
         alvo = normalizar_msisdn(remetente)
         variantes = set(variantes_nono_digito(alvo))
-        for chat in self._fetch_chats():
+        try:
+            itens = self._fetch_chats()
+        except Exception as exc:  # noqa: BLE001 - best-effort
+            logger.info("diretório de chats indisponível: %s", exc)
+            return None
+        for chat in itens:
             ext = normalizar_msisdn(chat.get("externalId", ""))
             can = normalizar_msisdn(chat.get("canonicalId", ""))
             if ext == alvo or ext in variantes or can in variantes:
-                cid: str | None = chat.get("id")
-                return cid
+                return chat
         return None
 
-    def _set_paused(self, remetente: str, paused: bool) -> bool:
-        if not self._instance_id or not remetente:
+    def _chat_id(self, remetente: str) -> str | None:
+        chat = self._chat(remetente)
+        return chat.get("id") if chat else None
+
+    def pausar_agente(self, remetente: str) -> bool:
+        """Pausa a IA via PATCH settings.agentPaused=true."""
+        if not self._instance_id:
+            return False
+        chat = self._chat(remetente)
+        if not chat or not chat.get("id"):
             return False
         try:
-            chat_id = self._chat_id(remetente)
-            if not chat_id:
-                return False
             with httpx.Client(headers=self._headers, timeout=self._timeout) as client:
                 r = client.patch(
-                    f"{self._base}/api/v2/chats/{chat_id}",
-                    json={"settings": {"agentPaused": paused}},
+                    f"{self._base}/api/v2/chats/{chat['id']}",
+                    json={"settings": {"agentPaused": True}},
                 )
                 r.raise_for_status()
             return True
         except Exception as exc:  # noqa: BLE001 - best-effort
-            logger.info("controle do agente indisponível (%s): %s", remetente, exc)
+            logger.info("falha ao pausar o agente (%s): %s", remetente, exc)
             return False
 
-    def pausar_agente(self, remetente: str) -> bool:
-        return self._set_paused(remetente, True)
-
     def retomar_agente(self, remetente: str) -> bool:
-        return self._set_paused(remetente, False)
+        """Retoma a IA via `clear-session`: despausa (agentPaused=false + agentResumedAt)
+        E **reseta a sessão do agente** — sem o reset o Genie fica preso e não responde.
+        Usa o `externalId` (mesmo id que o dispatcher usa para computar o sessionId)."""
+        if not self._instance_id:
+            return False
+        chat = self._chat(remetente)
+        if not chat:
+            return False
+        chat_ref = chat.get("externalId") or chat.get("id")
+        try:
+            with httpx.Client(headers=self._headers, timeout=self._timeout) as client:
+                r = client.post(
+                    f"{self._base}/api/v2/chats/clear-session",
+                    json={"instanceId": self._instance_id, "chatId": chat_ref},
+                )
+                r.raise_for_status()
+            return True
+        except Exception as exc:  # noqa: BLE001 - best-effort
+            logger.info("falha ao retomar o agente (%s): %s", remetente, exc)
+            return False
 
     def esta_pausado(self, remetente: str) -> bool:
-        try:
-            alvo = normalizar_msisdn(remetente)
-            variantes = set(variantes_nono_digito(alvo))
-            for chat in self._fetch_chats():
-                ext = normalizar_msisdn(chat.get("externalId", ""))
-                can = normalizar_msisdn(chat.get("canonicalId", ""))
-                if ext == alvo or ext in variantes or can in variantes:
-                    settings = chat.get("settings") or {}
-                    return bool(settings.get("agentPaused"))
-        except Exception as exc:  # noqa: BLE001 - best-effort
-            logger.info("status de pausa indisponível: %s", exc)
-        return False
+        chat = self._chat(remetente)
+        if not chat:
+            return False
+        return bool((chat.get("settings") or {}).get("agentPaused"))
 
     # --- ChatTranscriptPort: histórico da conversa (SPEC-018) -------------------- #
 

@@ -116,3 +116,53 @@ class TestChannelControl:
     def test_sem_match_none(self) -> None:
         h = _chats(lambda: self._CHATS)
         assert h._chat_id("550000000000") is None
+
+    def test_retomar_usa_clear_session_com_external_id(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        # SPEC-016: retomar reseta a sessão (clear-session), não só a flag.
+        chamadas: list[tuple[str, dict]] = []  # type: ignore[type-arg]
+
+        class _Resp:
+            def raise_for_status(self) -> None: ...
+
+        class _Client:
+            def __enter__(self):  # type: ignore[no-untyped-def]
+                return self
+            def __exit__(self, *a: object) -> None: ...
+            def post(self, url: str, json: dict) -> _Resp:  # type: ignore[type-arg]
+                chamadas.append((url, json))
+                return _Resp()
+            def patch(self, url: str, json: dict) -> _Resp:  # type: ignore[type-arg]
+                chamadas.append((url, json))
+                return _Resp()
+
+        monkeypatch.setattr(
+            "src.infrastructure.events.omni_chats.httpx.Client", lambda **k: _Client()
+        )
+        h = _chats(lambda: self._CHATS)
+        assert h.retomar_agente("5581993112159") is True
+        url, body = chamadas[-1]
+        assert url.endswith("/api/v2/chats/clear-session")
+        assert body == {"instanceId": "i1", "chatId": "87866608713902@lid"}
+
+    def test_pausar_usa_patch_agentpaused(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        capturado: dict = {}  # type: ignore[type-arg]
+
+        class _Resp:
+            def raise_for_status(self) -> None: ...
+
+        class _Client:
+            def __enter__(self):  # type: ignore[no-untyped-def]
+                return self
+            def __exit__(self, *a: object) -> None: ...
+            def patch(self, url: str, json: dict) -> _Resp:  # type: ignore[type-arg]
+                capturado["url"] = url
+                capturado["json"] = json
+                return _Resp()
+
+        monkeypatch.setattr(
+            "src.infrastructure.events.omni_chats.httpx.Client", lambda **k: _Client()
+        )
+        h = _chats(lambda: self._CHATS)
+        assert h.pausar_agente("5581993112159") is True
+        assert capturado["url"].endswith("/api/v2/chats/chat-uuid")
+        assert capturado["json"] == {"settings": {"agentPaused": True}}

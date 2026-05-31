@@ -11,16 +11,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { InvoicesTable } from "./InvoicesTable"
 import { OutageSection } from "./OutageSection"
+import { ProactiveSection } from "./ProactiveSection"
 import { TicketsSection } from "./TicketsSection"
 
 interface Props {
   customer: Customer
   contracts: Contract[]
   tickets: Ticket[]
+  phone: string
   onTicketsChanged: () => void
 }
 
-export function CustomerWorkspace({ customer, contracts, tickets, onTicketsChanged }: Props) {
+export function CustomerWorkspace({ customer, contracts, tickets, phone, onTicketsChanged }: Props) {
   const [selectedUcId, setSelectedUcId] = useState<string | null>(
     contracts[0]?.unidade.id ?? null,
   )
@@ -99,6 +101,7 @@ export function CustomerWorkspace({ customer, contracts, tickets, onTicketsChang
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="proativos">Proativos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="faturas" className="space-y-4 pt-2">
@@ -140,6 +143,10 @@ export function CustomerWorkspace({ customer, contracts, tickets, onTicketsChang
               tickets={tickets}
               onChanged={onTicketsChanged}
             />
+          </TabsContent>
+
+          <TabsContent value="proativos" className="pt-2">
+            <ProactiveSection phone={phone} />
           </TabsContent>
         </Tabs>
       </div>

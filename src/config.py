@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     files_public_base_url: str = "http://localhost/files"  # proxy do gateway -> /files/{key}
 
+    # Notificações proativas (SPEC-009 / ADR-0005).
+    nats_url: str = "nats://nats:4222"
+    omni_url: str = "http://omni:8882"  # REST do Omni (envio de texto); best-effort
+    omni_api_key: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

@@ -5,7 +5,32 @@ Determinístico: mesma entrada -> mesma mensagem. **Sem LLM** (ADR-0005).
 
 from __future__ import annotations
 
+import datetime as dt
+
 from src.domain.notifications.entities import EventoCX
+
+_BRT = dt.timezone(dt.timedelta(hours=-3))  # horário de Brasília (sem DST desde 2019)
+
+
+def _previsao_amigavel(valor: str | None) -> str | None:
+    """ISO -> 'hoje às 22h57' / 'amanhã às 09h00' / '31/05 às 22h57' (BRT).
+
+    Se não for um datetime ISO (ex.: 'hoje as 21h'), devolve o texto como veio.
+    """
+    if not valor:
+        return None
+    try:
+        quando = dt.datetime.fromisoformat(valor).astimezone(_BRT)
+    except (ValueError, TypeError):
+        return valor
+    agora = dt.datetime.now(_BRT)
+    hora = quando.strftime("%Hh%M")
+    delta_dias = (quando.date() - agora.date()).days
+    if delta_dias == 0:
+        return f"hoje às {hora}"
+    if delta_dias == 1:
+        return f"amanhã às {hora}"
+    return f"{quando.strftime('%d/%m')} às {hora}"
 
 
 def render_notificacao(evento: EventoCX) -> str:
@@ -17,7 +42,7 @@ def render_notificacao(evento: EventoCX) -> str:
             f"no valor de {d.get('valor', '—')}. Obrigado! 🙌"
         )
     if evento.tipo == "outage" and evento.subtipo == "aberta":
-        prev = d.get("previsao")
+        prev = _previsao_amigavel(d.get("previsao"))
         prazo = f" Previsão de retorno: {prev}." if prev else ""
         return (
             f"{nome}, identificamos uma interrupção de energia no seu bairro "

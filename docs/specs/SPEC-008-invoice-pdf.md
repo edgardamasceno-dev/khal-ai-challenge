@@ -1,6 +1,6 @@
 # SPEC-008 - generate_invoice_pdf (render realista + MinIO + gateway)
 
-- Status: Approved (2026-05-30)
+- Status: Approved (2026-05-30) — PR #13
 - Versao alvo: 0.9.0 (fecha as 9 tools MCP)
 - ADRs: **ADR-0009 (novo)** — object storage (MinIO) + render WeasyPrint + presigned.
   Mantem ADR-0003 (midia via tool action). Hexagonal/DDD (ADR-0001).

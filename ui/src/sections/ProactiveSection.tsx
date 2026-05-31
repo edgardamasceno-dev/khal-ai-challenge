@@ -66,8 +66,7 @@ export function ProactiveSection({ phone }: { phone: string }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Dispare avisos <strong>determinísticos</strong> (sem IA) ao cliente — registrados na
-        memória do agente (ADR-0005).
+        Dispare avisos ao cliente sobre pagamento e interrupções.
       </p>
 
       {preview && (

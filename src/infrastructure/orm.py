@@ -105,6 +105,7 @@ class InterrupcaoORM(Base):
     inicio: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True))
     previsao_retorno: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(Text)
+    encerrada_em: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ChamadoORM(Base):

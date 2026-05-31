@@ -4,6 +4,8 @@ estruturalmente (Protocol), permitindo testar os use cases sem banco.
 
 from __future__ import annotations
 
+import dataclasses
+import datetime as dt
 import uuid
 
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
@@ -55,6 +57,17 @@ class FakeFaturaRepository:
     def get(self, fatura_id: uuid.UUID) -> Fatura | None:
         return next((f for f in self._items if f.id == fatura_id), None)
 
+    def marcar_paga(
+        self, fatura_id: uuid.UUID, idempotency_key: str, now: dt.datetime
+    ) -> Fatura | None:
+        for idx, f in enumerate(self._items):
+            if f.id == fatura_id:
+                if f.status != "paga":
+                    f = dataclasses.replace(f, status="paga")
+                    self._items[idx] = f
+                return f
+        return None
+
 
 class FakeInterrupcaoRepository:
     def __init__(self, interrupcoes: list[Interrupcao] | None = None) -> None:
@@ -71,6 +84,31 @@ class FakeInterrupcaoRepository:
                     continue
                 return i
         return None
+
+    def abrir(
+        self, bairro: str, cidade: str, uf: str, causa: str | None,
+        previsao: dt.datetime | None, now: dt.datetime,
+    ) -> Interrupcao:
+        existente = self.find_ativa_por_regiao(bairro, cidade, uf)
+        if existente is not None:
+            return existente
+        nova = Interrupcao(
+            id=uuid.uuid4(), bairro=bairro, cidade=cidade, uf=uf.upper(),
+            tipo="nao_programada", causa=causa or "Interrupcao registrada pelo operador",
+            inicio=now, previsao_retorno=previsao, status="ativa",
+        )
+        self._items.append(nova)
+        return nova
+
+    def encerrar(
+        self, bairro: str, cidade: str | None, uf: str | None, now: dt.datetime
+    ) -> Interrupcao | None:
+        ativa = self.find_ativa_por_regiao(bairro, cidade, uf)
+        if ativa is None:
+            return None
+        encerrada = dataclasses.replace(ativa, status="encerrada")
+        self._items = [encerrada if i.id == ativa.id else i for i in self._items]
+        return encerrada
 
 
 class FakeChamadoRepository:

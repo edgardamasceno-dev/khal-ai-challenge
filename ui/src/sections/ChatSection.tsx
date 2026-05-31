@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { BotMessageSquare, ChevronUp, Hand, Send } from "lucide-react"
+import { BotMessageSquare, ChevronUp, Hand, MessagesSquare, Send, Sparkles } from "lucide-react"
 import { api, type ChatMessage } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { cn } from "@/lib/utils"
 
 const PAGE = 10
@@ -150,12 +157,34 @@ export function ChatSection({ phone }: { phone: string }) {
   }
 
   return (
-    <div className="flex h-[32rem] flex-col rounded-lg border">
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
-        <Badge variant={pausado ? "destructive" : "secondary"}>
+    <div className="flex h-[32rem] flex-col overflow-hidden rounded-lg border">
+      <div
+        className={cn(
+          "flex items-center justify-between gap-2 border-b px-4 py-2.5 transition-colors",
+          pausado
+            ? "border-status-warn/30 bg-status-warn-surface/50"
+            : "bg-muted/30",
+        )}
+      >
+        <Badge
+          variant={pausado ? "destructive" : "secondary"}
+          className={cn(
+            "gap-1.5 font-medium",
+            pausado
+              ? "border-status-warn/30 bg-status-warn-surface text-status-warn-foreground"
+              : "border-primary/20 bg-primary/10 text-primary",
+          )}
+        >
+          {pausado ? <Hand className="size-3" /> : <Sparkles className="size-3" />}
           {pausado ? "Você está no controle" : "IA ativa"}
         </Badge>
-        <Button size="sm" variant="outline" disabled={busy} onClick={toggleControle}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={toggleControle}
+          className={cn("transition-opacity", busy && "opacity-60")}
+        >
           {pausado ? (
             <>
               <BotMessageSquare /> Devolver à IA
@@ -171,10 +200,10 @@ export function ChatSection({ phone }: { phone: string }) {
       <div
         ref={scrollRef}
         className={cn(
-          "flex-1 space-y-2 overflow-x-hidden overflow-y-auto bg-muted/20 p-4",
+          "flex-1 space-y-2.5 overflow-x-hidden overflow-y-auto bg-muted/20 p-4",
           "[&::-webkit-scrollbar]:w-1.5",
-          "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/15",
-          "hover:[&::-webkit-scrollbar-thumb]:bg-foreground/25",
+          "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border",
+          "hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40",
           "[&::-webkit-scrollbar-track]:bg-transparent",
         )}
       >
@@ -186,23 +215,31 @@ export function ChatSection({ phone }: { phone: string }) {
           </div>
         )}
         {msgs.length === 0 && (
-          <p className="py-10 text-center text-sm text-muted-foreground">
-            Sem mensagens nesta conversa.
-          </p>
+          <Empty className="py-12">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessagesSquare />
+              </EmptyMedia>
+              <EmptyTitle>Sem mensagens</EmptyTitle>
+              <EmptyDescription>Sem mensagens nesta conversa.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         )}
         {msgs.map((m) => (
           <div key={m.id} className={cn("flex", m.do_cliente ? "justify-start" : "justify-end")}>
             <div
               className={cn(
-                "max-w-[78%] rounded-lg px-3 py-1.5 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]",
-                m.do_cliente ? "border bg-background" : "bg-primary text-primary-foreground",
+                "max-w-[78%] px-3 py-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere] shadow-sm",
+                m.do_cliente
+                  ? "rounded-2xl rounded-bl-sm border bg-card text-card-foreground"
+                  : "rounded-2xl rounded-br-sm bg-primary text-primary-foreground",
               )}
             >
               {m.texto}
               <span
                 className={cn(
-                  "mt-0.5 block text-[10px]",
-                  m.do_cliente ? "text-muted-foreground" : "text-primary-foreground/70",
+                  "mt-1 block font-mono text-[10px] tabular-nums",
+                  m.do_cliente ? "text-muted-foreground" : "text-primary-foreground",
                 )}
               >
                 {hora(m.em)}
@@ -212,7 +249,7 @@ export function ChatSection({ phone }: { phone: string }) {
         ))}
       </div>
 
-      <div className="border-t p-2">
+      <div className="border-t bg-card p-2">
         {pausado ? (
           <div className="flex gap-2">
             <Input
@@ -227,7 +264,8 @@ export function ChatSection({ phone }: { phone: string }) {
             </Button>
           </div>
         ) : (
-          <p className="px-2 py-1.5 text-center text-xs text-muted-foreground">
+          <p className="flex items-center justify-center gap-1.5 px-2 py-1.5 text-center text-xs text-muted-foreground">
+            <Sparkles className="size-3 text-primary" />
             A IA está respondendo. Assuma o controle para digitar.
           </p>
         )}

@@ -17,9 +17,9 @@ import {
 import { cn } from "@/lib/utils"
 
 const TONE: Record<string, string> = {
-  ok: "bg-emerald-500",
-  down: "bg-red-500",
-  unknown: "bg-amber-500",
+  ok: "bg-status-ok",
+  down: "bg-status-danger",
+  unknown: "bg-status-warn",
 }
 const LABEL: Record<string, string> = { api: "API", whatsapp: "WhatsApp", agente: "Agente" }
 const ESTADO: Record<string, string> = {
@@ -78,7 +78,9 @@ export function StatusMenu() {
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-56 p-1.5">
-          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Componentes</div>
+          <div className="px-2 py-1.5 text-[10px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
+            Componentes
+          </div>
           {components.length === 0 && (
             <div className="px-2 py-1.5 text-sm text-muted-foreground">Verificando…</div>
           )}
@@ -87,21 +89,25 @@ export function StatusMenu() {
               key={c.name}
               className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm"
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 font-medium">
                 <Pulse status={c.status} />
                 {LABEL[c.name] ?? c.name}
               </span>
-              <span className="text-xs text-muted-foreground">{ESTADO[c.status] ?? c.status}</span>
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {ESTADO[c.status] ?? c.status}
+              </span>
             </div>
           ))}
           <Separator className="my-1" />
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setSettingsOpen(true)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+            className="w-full justify-start gap-2 font-normal"
           >
-            <Settings className="size-4" /> Configurações
-          </button>
+            <Settings className="size-4 text-muted-foreground" /> Configurações
+          </Button>
         </PopoverContent>
       </Popover>
 

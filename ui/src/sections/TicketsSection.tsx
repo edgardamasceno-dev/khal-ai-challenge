@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { BotMessageSquare, Headphones, Plus } from "lucide-react"
+import { BotMessageSquare, Headphones, Inbox, Plus } from "lucide-react"
 import { api, ApiError, type Customer, type Handoff, type Ticket } from "@/lib/api"
 import {
   formatDateTime,
@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import {
   Table,
   TableBody,
@@ -36,6 +37,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 interface Props {
   customer: Customer
@@ -55,28 +77,63 @@ export function TicketsSection({ customer, selectedUcId, tickets, onChanged }: P
       <HandoffQueue />
 
       {tickets.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Nenhum chamado para este cliente.
-        </p>
+        <Empty className="border py-12">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Inbox />
+            </EmptyMedia>
+            <EmptyTitle>Nenhum chamado</EmptyTitle>
+            <EmptyDescription>Nenhum chamado para este cliente.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
-        <div className="rounded-lg border">
+        <div className="overflow-hidden rounded-lg border">
+          <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-2.5">
+            <span className="text-sm font-semibold tracking-tight">Chamados</span>
+            <Badge variant="secondary" className="tabular-nums">
+              {tickets.length}
+            </Badge>
+          </div>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Protocolo</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead className="text-right">SLA</TableHead>
-                <TableHead>Aberto em</TableHead>
-                <TableHead className="text-right">Status</TableHead>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-xs font-medium text-muted-foreground uppercase">
+                  Protocolo
+                </TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground uppercase">
+                  Tipo
+                </TableHead>
+                <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase">
+                  SLA
+                </TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground uppercase">
+                  Aberto em
+                </TableHead>
+                <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase">
+                  Status
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {tickets.map((t) => (
                 <TableRow key={t.id}>
-                  <TableCell className="font-mono text-xs font-medium">{t.protocolo}</TableCell>
+                  <TableCell>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="font-mono text-xs font-medium tabular-nums">
+                          {t.protocolo}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>Protocolo do chamado</TooltipContent>
+                    </Tooltip>
+                  </TableCell>
                   <TableCell>{ticketTypeLabel(t.tipo)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{t.sla_horas}h</TableCell>
-                  <TableCell className="tabular-nums">{formatDateTime(t.aberto_em)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">
+                    {t.sla_horas}h
+                  </TableCell>
+                  <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {formatDateTime(t.aberto_em)}
+                  </TableCell>
                   <TableCell className="text-right">
                     <TicketStatusBadge status={t.status} />
                   </TableCell>
@@ -271,23 +328,42 @@ function HandoffQueue() {
   if (items.length === 0) return null
 
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5">
-      <div className="flex items-center gap-2 border-b border-amber-500/20 px-4 py-2 text-sm font-medium">
-        <Headphones className="size-4 text-amber-600" /> Atendimento humano ({items.length})
+    <div className="overflow-hidden rounded-lg border border-status-warn/40 bg-status-warn-surface/50">
+      <div className="flex items-center gap-2 border-b border-status-warn/30 px-4 py-2.5 text-sm font-semibold tracking-tight text-status-warn-foreground">
+        <Headphones className="size-4 text-status-warn" />
+        Atendimento humano
+        <Badge
+          variant="outline"
+          className="ml-auto border-status-warn/30 bg-status-warn-surface text-status-warn-foreground tabular-nums"
+        >
+          {items.length}
+        </Badge>
       </div>
-      <ul className="divide-y">
+      <ItemGroup className="gap-0 divide-y divide-status-warn/20">
         {items.map((h) => (
-          <li key={h.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-            <div className="min-w-0">
-              <div className="truncate">{h.motivo ?? "Handoff solicitado"}</div>
-              <div className="text-xs text-muted-foreground">{formatDateTime(h.criado_em)}</div>
-            </div>
-            <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => resume(h)}>
-              <BotMessageSquare /> Devolver à IA
-            </Button>
-          </li>
+          <Item key={h.id} size="sm" className="rounded-none">
+            <ItemMedia variant="icon" className="text-status-warn">
+              <Headphones />
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{h.motivo ?? "Handoff solicitado"}</ItemTitle>
+              <ItemDescription className="font-mono text-xs tabular-nums">
+                {formatDateTime(h.criado_em)}
+              </ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy !== null}
+                onClick={() => resume(h)}
+              >
+                <BotMessageSquare /> Devolver à IA
+              </Button>
+            </ItemActions>
+          </Item>
         ))}
-      </ul>
+      </ItemGroup>
     </div>
   )
 }

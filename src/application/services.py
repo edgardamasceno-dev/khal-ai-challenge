@@ -76,6 +76,10 @@ class BillingService:
             raise NotFoundError(f"Nenhum titular para o telefone {normalizado.mascarado()}")
         return titular
 
+    def list_personas(self) -> list[Titular]:
+        """Personas cadastradas (atalhos do console). Ordenadas por nome."""
+        return self._titulares.list_all()
+
     def get_customer(self, titular_id: uuid.UUID) -> Titular:
         titular = self._titulares.get(titular_id)
         if titular is None:

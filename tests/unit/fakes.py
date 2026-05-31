@@ -30,6 +30,9 @@ class FakeTitularRepository:
     def get(self, titular_id: uuid.UUID) -> Titular | None:
         return self._by_id.get(titular_id)
 
+    def list_all(self) -> list[Titular]:
+        return sorted(self._by_id.values(), key=lambda t: t.nome)
+
     def list_contratos(self, titular_id: uuid.UUID) -> list[Contrato]:
         return list(self._contratos.get(titular_id, []))
 

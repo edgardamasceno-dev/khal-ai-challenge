@@ -81,6 +81,12 @@ class TestBillingRepos:
         assert repo.get(ANA) is not None
         assert repo.find_by_phone("550000000000") is None
 
+    def test_list_all(self, session: Session) -> None:
+        _seed(session)
+        titulares = SqlTitularRepository(session).list_all()
+        assert [t.nome for t in titulares] == ["Ana Souza"]
+        assert titulares[0].telefone.value == "555199990001"
+
     def test_list_contratos_com_unidade(self, session: Session) -> None:
         _seed(session)
         contratos = SqlTitularRepository(session).list_contratos(ANA)

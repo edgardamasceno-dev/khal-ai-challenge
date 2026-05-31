@@ -41,6 +41,12 @@ variam (`media-*.cdn`, `*.fna`, ranges rotativos) — inviável de forma estáve
 abre a **interface** de rede; o `NO_PROXY` restrito garante que o tráfego *intencional* do Omni
 (WebSocket, API) siga pelo proxy allowlist — só a mídia vai direto.
 
+**Nota (anexo em base64, não URL do MinIO):** o PDF anexo trafega como **base64** no payload do
+`send/media` (`omni_sender.py::send_document`), e **não** como URL do MinIO. O Omni roda na
+sandbox e **não alcança o MinIO local**, então o documento é re-renderizado e embutido em base64
+(`services.py::enviar_2a_via`). O **link público** (gateway `/files/`) vai apenas no **texto** — é
+ele que aponta para o MinIO; o anexo carrega os bytes inline.
+
 ### Nota: `khal-wanet` (WSS) vs `bridge` (upload de mídia)
 
 O RUNBOOK 6.0 já conecta o sandbox a `khal-wanet` (rede não-interna) porque o **WebSocket** do

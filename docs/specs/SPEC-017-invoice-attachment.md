@@ -33,7 +33,7 @@ o **link** (pré-assinado) no texto como redundância. Determinístico, via tool
   `HttpxOmniSender` resolve o JID (check-number) e faz `send/media` (base64). Best-effort.
 - `InvoiceDocumentService.enviar_2a_via(fatura_id)`: resolve titular dono, garante o PDF
   (MinIO) + link pré-assinado, envia o **anexo** ao telefone do titular e o **link** no
-  texto. Devolve `{enviado, url, presigned, expires_at}`.
+  texto. Devolve `{enviado, enviado_link, enviado_anexo, mes_referencia, status, url}`.
 - REST: `POST /invoices/{fatura_id}/send` -> envia. (`GET .../pdf` segue para o console.)
 
 ### MCP

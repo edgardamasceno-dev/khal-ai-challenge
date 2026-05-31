@@ -1,6 +1,6 @@
 # ADR-0003 - Envio de midia (PDF) como acao de ferramenta
 
-- Status: Accepted
+- Status: Accepted (estendido pelo ADR-0010 — egress de midia opt-in)
 - Data: 2026-05-30
 
 ## Context
@@ -28,4 +28,4 @@ Negativas:
 ## Alternatives
 
 - **Enviar PDF pelo reply do agente**: impossivel; reply e texto-puro.
-- **Mandar link em vez de anexo**: pior UX e exige hospedagem publica do PDF.
+- **Mandar link em vez de anexo**: nao foi descartado. Na pratica, o link no texto virou o canal **confiavel** (PDF hospedado via gateway `/files/`, ver ADR-0009), e o anexo por `send/media` ficou **best-effort/opt-in** (ver ADR-0010), pois o upload de midia do WhatsApp pode nao completar na sandbox isolada. O link e o fallback que garante a 2a via sempre que o anexo nao sobe.

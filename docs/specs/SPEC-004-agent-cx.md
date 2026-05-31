@@ -20,7 +20,7 @@ por **TDD**. O `agent/` e o payload que o container `sandbox` (increment 5) mont
 
 ## 3. Escopo
 
-- `agent/AGENTS.md`: papel, persona, politica, catalogo das 7 tools, guardrails no prompt
+- `agent/AGENTS.md`: papel, persona, politica, catalogo das 7 tools (8 apos SPEC-005 incluir search_knowledge_base), guardrails no prompt
   (so afirmar o que veio de tool; confirmar antes de escrever; recusar acesso a outro
   cliente/injection; escalar fora de escopo).
 - `agent/mcp.config.json`: wiring do MCP (`type: http`, `url: http://localhost/mcp`).

@@ -4,7 +4,13 @@
 - Versao alvo: 0.7.0 (personas dirigidas por `.env`, seed e evals derivados)
 - Decisao de perfil (1 persona): quando `len(personas)==1`, garantir perfil **rico**
   (>=1 fatura vencida + outage no bairro) para exercitar as tools na demo.
-- ADRs: **ADR-0008 (novo)** - seeder programático em Python (substitui o seed SQL-on-init).
+- Decisao de perfil (3 canônicas / **ADR-0011**): os cenários das personas default
+  (Ana/Carlos/Joana) são **fixos por nome** (`persona_key`), independentes do telefone —
+  **canônico-por-nome > rico > derivado**. Garante demo/evals fiéis (Ana com outage+fatura
+  vencida, Carlos comercial multi-UC, Joana rural com corte). Personas adicionais seguem 100%
+  derivadas; telefones não-canônicos mantêm o perfil de antes (baseline preservado).
+- ADRs: **ADR-0008 (novo)** - seeder programático em Python (substitui o seed SQL-on-init);
+  **ADR-0011 (novo)** - overlay canônico determinístico por nome.
   Mantém ADR-0001 (Python), ADR-0007 (runtime do agente). Não contraria os demais.
 
 ## 1. Problema
@@ -47,7 +53,7 @@ para ela — sem tocar em código.
 - **`src/domain/persona/`** (domínio puro): `Persona`, `PerfilPersona` (value objects) e a
   **derivação determinística** `perfil_de(telefone, seed) -> PerfilPersona`:
   - `bairro`, `cidade`, `uf`, `classe`, `subgrupo`;
-  - `n_ucs` ∈ {1,2}; `base_kwh` por UC;
+  - `n_ucs` ∈ {1,2,3,4} (ampliado de {1,2} pela SPEC-013); `base_kwh` (tupla) por UC;
   - **cenário de fatura** ∈ {em_dia, uma_aberta, uma_vencida};
   - `outage_ativa` (bool) no bairro; `corte_religacao` (bool);
   - CPF fictício com **dígito verificador válido**, derivado do telefone (estável/idempotente);
@@ -83,8 +89,8 @@ para ela — sem tocar em código.
 | `cpf`            | str (11)        | DV válido (mod 11), fictício, estável por telefone     |
 | `bairro`/`cidade`| str             | de uma lista fictícia, escolhido por hash              |
 | `classe`/`subgrupo`| enum          | residencial/comercial/rural                            |
-| `n_ucs`          | 1..2            | multi-UC quando o hash seleciona comercial             |
-| `base_kwh`       | int por UC      | consumo base; leituras com sazonalidade verão +35%     |
+| `n_ucs`          | 1..4            | distribuicao ponderada por classe (comercial tende a mais UCs); SPEC-013 |
+| `base_kwh`       | tuple[int] (um por UC) | consumo base; leituras com sazonalidade verão +35%     |
 | `cenario_fatura` | enum            | `em_dia` \| `uma_aberta` \| `uma_vencida`              |
 | `outage_ativa`   | bool            | interrupção não programada ativa no bairro             |
 | `corte_religacao`| bool            | histórico de corte + religação                         |

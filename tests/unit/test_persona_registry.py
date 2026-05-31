@@ -57,3 +57,32 @@ def test_multiplas_personas_perfis_derivados() -> None:
     assert len(res) == 2
     # 2+ personas -> perfis puramente derivados (não forçados a rico)
     assert {p.telefone for p, _ in res} == {"555199990001", "555199990002"}
+
+
+def test_default_canonico_produz_cenarios_canonicos() -> None:
+    # O default do .env.example (3 canônicas) entrega os cenários FIXOS que a
+    # demo e os evals esperam (ADR-0011), via o nome -> persona_key.
+    res = carregar_personas(
+        "Ana Souza:555199990001;Carlos Lima:555199990002;Joana Pereira:555199990003", 42
+    )
+    por_nome = {p.nome: perfil for p, perfil in res}
+    ana = por_nome["Ana Souza"]
+    assert ana.bairro == "Jardim das Flores"
+    assert ana.cenario_fatura == "uma_vencida"
+    assert ana.outage_ativa is True
+    carlos = por_nome["Carlos Lima"]
+    assert carlos.classe == "comercial"
+    assert carlos.n_ucs >= 2
+    assert carlos.cenario_fatura == "em_dia"
+    joana = por_nome["Joana Pereira"]
+    assert joana.classe == "rural"
+    assert joana.corte_religacao is True
+
+
+def test_persona_unica_canonica_recebe_canonico_nao_rico() -> None:
+    # Precedência canônico > rico: Carlos sozinho mantém o cenário comercial
+    # (não é forçado ao perfil rico residencial+outage).
+    [(_, perfil)] = carregar_personas("Carlos Lima:555199990002", 42)
+    assert perfil.classe == "comercial"
+    assert perfil.cenario_fatura == "em_dia"
+    assert perfil.outage_ativa is False

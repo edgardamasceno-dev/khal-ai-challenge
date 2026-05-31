@@ -4,25 +4,27 @@ Distribuidora ficticia **Luz do Vale** (cidade Vale do Sol/SP). Telefones vem do
 
 ## Personas
 
-> Desde a SPEC-006, personas vêm de `SEED_PERSONAS` (`.env`) e cada uma é derivada por
-> `perfil_de(telefone, seed)`. As três abaixo são o **default** (`.env.example`) e os
-> cenários canônicos que as journeys assumem. Persona única no `.env` → perfil rico.
+> Desde a SPEC-006, personas vêm de `SEED_PERSONAS` (`.env`) e cada uma ganha um perfil
+> determinístico. **Precedência (ADR-0011): canônico-por-nome > rico (persona única) > derivado.**
+> As três abaixo são o **default** (`.env.example`) e têm cenário canônico **fixo** (não
+> sorteado) — independente do telefone. Personas **adicionais** (qualquer outro nome) são
+> 100% **derivadas** por `perfil_de(telefone, seed)`; persona única não-canônica → perfil rico.
 
 ### Ana Souza - `ana.souza` (persona primária / default)
 
-- Residencial, classe B1. Uma UC no bairro **Jardim das Flores**.
 - 1ª entrada de `SEED_PERSONAS`; numero desconhecido cai nela na demo (configuravel).
-- Estado para demo: fatura do mes atual **em aberto**, uma fatura **vencida**, 24 meses de historico. **Ha uma interrupcao ativa no bairro dela** (demo de outage + notificacao proativa).
+- **Cenário canônico (fato)**: residencial B1, bairro **Jardim das Flores**, **fatura vencida** e **outage ativa**. Fixado por nome (`persona_key="ana.souza"`) em `perfil_de`, **independente do telefone+seed** — a demo e os evals (incluindo a jornada J2 de falta de energia) recebem sempre esse cenário. CPF/consumo seguem derivados do telefone (estáveis).
+- **Fato**: 24 meses de historico de leituras/faturas.
 
 ### Carlos Lima - `carlos.lima`
 
-- Comercial (padaria), classe B3. **Duas UCs** (loja + deposito) - demo de "cliente com multiplos contratos".
-- 2ª entrada de `SEED_PERSONAS`. Faturas em dia; consumo mais alto e estavel.
+- 2ª entrada de `SEED_PERSONAS`.
+- **Cenário canônico (fato)**: **comercial B3, multi-UC** (`n_ucs ≥ 2`), faturas **em dia**. Fixado por nome, independente do telefone — multi-UC garantido (não depende de sorteio). Os consumos das UCs e o nº exato (≥2) seguem derivados do telefone.
 
 ### Joana Pereira - `joana.pereira`
 
-- Rural, classe B2. Uma UC afastada.
-- 3ª entrada de `SEED_PERSONAS`. Historico inclui **corte e religacao** (debito quitado) - demo de jornada de religacao.
+- 3ª entrada de `SEED_PERSONAS`.
+- **Cenário canônico (fato)**: **rural B2**, com **corte e religação** no histórico (`corte_religacao=True`). Fixado por nome, independente do telefone — o seeder sempre materializa o chamado de religação dela.
 
 ### Cliente desconhecido
 

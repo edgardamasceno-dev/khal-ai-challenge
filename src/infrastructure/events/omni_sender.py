@@ -12,6 +12,7 @@ pelo caso de uso (notificação auditável).
 
 from __future__ import annotations
 
+import base64
 import logging
 
 import httpx
@@ -62,4 +63,38 @@ class HttpxOmniSender:
                 return True
         except Exception as exc:  # noqa: BLE001 - best-effort
             logger.warning("Omni indisponível, notificação só na memória: %s", exc)
+            return False
+
+    def send_document(
+        self, chat_id: str, conteudo: bytes, filename: str, caption: str = ""
+    ) -> bool:
+        """Envia um PDF como documento anexo (base64) via Omni send/media (ADR-0003).
+
+        base64 (não URL): o Omni baixa a URL server-side e não alcança o MinIO local.
+        Best-effort: sem instância / Omni indisponível / sem WhatsApp -> False.
+        """
+        if not self._instance_id:
+            return False
+        try:
+            with httpx.Client(headers=self._headers, timeout=max(self._timeout, 20.0)) as client:
+                jid = self._resolve_jid(client, chat_id)
+                if jid is None:
+                    logger.info("Telefone %s não tem WhatsApp; anexo não enviado.", chat_id)
+                    return False
+                r = client.post(
+                    f"{self._base}/api/v2/messages/send/media",
+                    json={
+                        "instanceId": self._instance_id,
+                        "to": jid,
+                        "type": "document",
+                        "base64": base64.b64encode(conteudo).decode(),
+                        "filename": filename,
+                        "mimeType": "application/pdf",
+                        "caption": caption,
+                    },
+                )
+                r.raise_for_status()
+                return True
+        except Exception as exc:  # noqa: BLE001 - best-effort
+            logger.warning("Falha ao enviar anexo pelo Omni: %s", exc)
             return False

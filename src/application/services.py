@@ -193,6 +193,7 @@ class InvoiceDocumentService:
         titulares: TitularRepository,
         renderer: InvoicePdfRenderer,
         storage: ObjectStorage,
+        sender: OmniSender | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._faturas = faturas
@@ -200,6 +201,7 @@ class InvoiceDocumentService:
         self._titulares = titulares
         self._renderer = renderer
         self._storage = storage
+        self._sender = sender
         self._clock: Clock = clock or _utcnow
 
     def _detalhar(self, fatura_id: uuid.UUID) -> FaturaDetalhada:
@@ -241,6 +243,31 @@ class InvoiceDocumentService:
             url = self._storage.public_url(key)
             expira = None
         return DocumentoFatura(url=url, presigned=presign, expires_at=expira, gerado_agora=gerou)
+
+    def enviar_2a_via(self, fatura_id: uuid.UUID, expires: int = 3600) -> dict[str, object]:
+        """Envia a 2ª via ao titular: PDF **anexo** no WhatsApp + **link** no texto
+        (ADR-0003 / SPEC-017). Destino = telefone cadastrado do dono da fatura."""
+        detalhe = self._detalhar(fatura_id)  # resolve titular dono + valida a fatura
+        doc = self.obter_ou_gerar(fatura_id, presign=True, expires=expires)
+        enviado = False
+        if self._sender is not None:
+            pdf = self._renderer.render(detalhe)
+            mes = detalhe.fatura.mes_referencia
+            telefone = detalhe.titular.telefone.value
+            caption = f"Luz do Vale — 2ª via da fatura de {mes}."
+            enviado = self._sender.send_document(
+                telefone, pdf, f"fatura-{mes}.pdf", caption
+            )
+            if enviado:
+                self._sender.send_text(telefone, f"Link da sua 2ª via: {doc.url}")
+        return {
+            "enviado": enviado,
+            "mes_referencia": detalhe.fatura.mes_referencia,
+            "status": detalhe.fatura.status,
+            "url": doc.url,
+            "presigned": doc.presigned,
+            "expires_at": doc.expires_at.isoformat() if doc.expires_at else None,
+        }
 
 
 class OutageService:

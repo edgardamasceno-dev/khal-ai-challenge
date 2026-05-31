@@ -113,9 +113,12 @@ class EventBus(Protocol):
 
 @runtime_checkable
 class OmniSender(Protocol):
-    """Envia texto pelo canal (Omni REST). Best-effort no deliverable."""
+    """Envia texto e documentos pelo canal (Omni REST). Best-effort."""
 
     def send_text(self, chat_id: str, texto: str) -> bool: ...
+    def send_document(
+        self, chat_id: str, conteudo: bytes, filename: str, caption: str = ""
+    ) -> bool: ...
 
 
 @runtime_checkable

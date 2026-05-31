@@ -72,6 +72,11 @@ class _FakeSender:
     def send_text(self, chat_id: str, texto: str) -> bool:
         return True
 
+    def send_document(
+        self, chat_id: str, conteudo: bytes, filename: str, caption: str = ""
+    ) -> bool:
+        return True
+
 
 class _MemStorage:
     def __init__(self) -> None:
@@ -153,7 +158,7 @@ def ctx() -> Iterator[SimpleNamespace]:
     billing = BillingService(titulares, FakeUnidadeRepository([uc]), faturas_repo, uow)
     invoice_doc = InvoiceDocumentService(
         FakeFaturaRepository([fatura]), FakeUnidadeRepository([uc]), titulares,
-        _FakeRenderer(), _MemStorage(),
+        _FakeRenderer(), _MemStorage(), sender=_FakeSender(),
         clock=lambda: dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
     bus = _FakeBus()

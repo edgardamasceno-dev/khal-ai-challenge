@@ -39,6 +39,12 @@ class HttpxLegacyApiClient:
         data: dict[str, Any] = r.json()
         return data
 
+    def send_invoice(self, fatura_id: str) -> dict[str, Any]:
+        r = self._c.post(f"/invoices/{fatura_id}/send")
+        r.raise_for_status()
+        data: dict[str, Any] = r.json()
+        return data
+
     def get_outage(self, bairro: str) -> dict[str, Any]:
         r = self._c.get("/outages", params={"bairro": bairro})
         r.raise_for_status()

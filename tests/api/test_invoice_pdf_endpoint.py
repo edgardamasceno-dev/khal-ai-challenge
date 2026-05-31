@@ -34,3 +34,16 @@ def test_pdf_presigned_com_expiracao(ctx: SimpleNamespace) -> None:
 def test_pdf_fatura_inexistente_404(ctx: SimpleNamespace) -> None:
     r = ctx.client.get("/api/invoices/00000000-0000-0000-0000-000000000000/pdf")
     assert r.status_code == 404
+
+
+def test_send_anexa_e_devolve_url(ctx: SimpleNamespace) -> None:
+    # SPEC-017: POST /send envia o anexo (fake sender -> enviado=True) + devolve a URL.
+    r = ctx.client.post(f"/api/invoices/{FAT}/send")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["enviado"] is True and body["url"]
+
+
+def test_send_fatura_inexistente_404(ctx: SimpleNamespace) -> None:
+    r = ctx.client.post("/api/invoices/00000000-0000-0000-0000-000000000000/send")
+    assert r.status_code == 404

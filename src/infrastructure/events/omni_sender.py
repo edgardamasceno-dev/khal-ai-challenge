@@ -22,12 +22,18 @@ logger = logging.getLogger("proactive.omni")
 
 class HttpxOmniSender:
     def __init__(
-        self, base_url: str, api_key: str = "", instance_id: str = "", timeout: float = 8.0
+        self,
+        base_url: str,
+        api_key: str = "",
+        instance_id: str = "",
+        timeout: float = 8.0,
+        media_timeout: float = 6.0,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._instance_id = instance_id
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._timeout = timeout
+        self._media_timeout = media_timeout  # anexo é best-effort; não trava o agente
 
     def _resolve_jid(self, client: httpx.Client, telefone: str) -> str | None:
         """Resolve o JID canônico via onWhatsApp; None se o número não tem conta."""
@@ -70,13 +76,15 @@ class HttpxOmniSender:
     ) -> bool:
         """Envia um PDF como documento anexo (base64) via Omni send/media (ADR-0003).
 
-        base64 (não URL): o Omni baixa a URL server-side e não alcança o MinIO local.
-        Best-effort: sem instância / Omni indisponível / sem WhatsApp -> False.
+        **Best-effort com timeout curto**: o upload de mídia do WhatsApp (CDNs
+        `*.cdn.whatsapp.net`) pode falhar em ambiente de egress restrito — nesse caso
+        não bloqueia o atendimento; o link no texto é o canal confiável. base64 (não
+        URL) porque o Omni não alcança o MinIO local.
         """
         if not self._instance_id:
             return False
         try:
-            with httpx.Client(headers=self._headers, timeout=max(self._timeout, 20.0)) as client:
+            with httpx.Client(headers=self._headers, timeout=self._media_timeout) as client:
                 jid = self._resolve_jid(client, chat_id)
                 if jid is None:
                     logger.info("Telefone %s não tem WhatsApp; anexo não enviado.", chat_id)

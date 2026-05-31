@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { CustomerWorkspace } from "@/sections/CustomerWorkspace"
-import { HealthBadge } from "@/sections/HealthBadge"
+import { StatusMenu } from "@/sections/StatusMenu"
 
 export default function App() {
   const [phone, setPhone] = useState("")
@@ -74,7 +74,7 @@ export default function App() {
             <h1 className="text-sm leading-tight font-semibold">Luz do Vale</h1>
             <p className="text-xs text-muted-foreground">Console do Operador</p>
           </div>
-          <HealthBadge />
+          <StatusMenu />
         </div>
       </header>
 

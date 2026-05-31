@@ -99,13 +99,15 @@ export function StatusMenu() {
             </div>
           ))}
           <Separator className="my-1" />
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => setSettingsOpen(true)}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="w-full justify-start gap-2 font-normal"
           >
             <Settings className="size-4 text-muted-foreground" /> Configurações
-          </button>
+          </Button>
         </PopoverContent>
       </Popover>
 

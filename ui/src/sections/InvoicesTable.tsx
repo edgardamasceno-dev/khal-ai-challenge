@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { api, type Invoice } from "@/lib/api"
 import { BandeiraBadge, formatDate, InvoiceStatusBadge } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import {
   Select,
   SelectContent,
@@ -66,54 +67,70 @@ export function InvoicesTable({ ucId }: { ucId: string }) {
   }
 
   return (
-    <div className="rounded-lg border">
+    <div className="overflow-hidden rounded-lg border">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="bg-muted/30">
             <TableHead>Mês</TableHead>
             <TableHead className="text-right">Consumo</TableHead>
             <TableHead className="text-right">Valor</TableHead>
             <TableHead>Bandeira</TableHead>
             <TableHead>Vencimento</TableHead>
             <TableHead className="text-right">Status</TableHead>
-            <TableHead className="text-right">Ajustar</TableHead>
+            <TableHead className="border-l text-right">Ajustar</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {invoices.map((inv) => (
-            <TableRow key={inv.id}>
-              <TableCell className="font-medium tabular-nums">{inv.mes_referencia}</TableCell>
-              <TableCell className="text-right tabular-nums">{inv.consumo_kwh} kWh</TableCell>
-              <TableCell className="text-right tabular-nums">{inv.valor_formatado}</TableCell>
-              <TableCell>
-                <BandeiraBadge bandeira={inv.bandeira} />
-              </TableCell>
-              <TableCell className="tabular-nums">{formatDate(inv.vencimento)}</TableCell>
-              <TableCell className="text-right">
-                <InvoiceStatusBadge status={inv.status} />
-              </TableCell>
-              <TableCell className="text-right">
-                <Select
-                  value={inv.status}
-                  disabled={busy !== null}
-                  onValueChange={(v) => changeStatus(inv, v as "em_aberto" | "vencida")}
+          {invoices.map((inv) => {
+            const vencida = inv.status === "vencida"
+            return (
+              <TableRow key={inv.id} className={cn(vencida && "bg-status-danger-surface/40")}>
+                <TableCell className="font-mono text-xs font-medium tabular-nums">
+                  {inv.mes_referencia}
+                </TableCell>
+                <TableCell className="text-right font-mono text-xs tabular-nums text-muted-foreground">
+                  {inv.consumo_kwh} kWh
+                </TableCell>
+                <TableCell className="text-right font-medium tabular-nums">
+                  {inv.valor_formatado}
+                </TableCell>
+                <TableCell>
+                  <BandeiraBadge bandeira={inv.bandeira} />
+                </TableCell>
+                <TableCell
+                  className={cn(
+                    "font-mono text-xs tabular-nums",
+                    vencida && "font-semibold text-status-danger-foreground",
+                  )}
                 >
-                  <SelectTrigger size="sm" className="ml-auto w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="em_aberto">Em aberto</SelectItem>
-                    <SelectItem value="vencida">Vencida</SelectItem>
-                    {inv.status === "paga" && (
-                      <SelectItem value="paga" disabled>
-                        Paga
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </TableCell>
-            </TableRow>
-          ))}
+                  {formatDate(inv.vencimento)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <InvoiceStatusBadge status={inv.status} />
+                </TableCell>
+                <TableCell className="border-l bg-muted/20 text-right">
+                  <Select
+                    value={inv.status}
+                    disabled={busy !== null}
+                    onValueChange={(v) => changeStatus(inv, v as "em_aberto" | "vencida")}
+                  >
+                    <SelectTrigger size="sm" className="ml-auto w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="em_aberto">Em aberto</SelectItem>
+                      <SelectItem value="vencida">Vencida</SelectItem>
+                      {inv.status === "paga" && (
+                        <SelectItem value="paga" disabled>
+                          Paga
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>

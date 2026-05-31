@@ -70,14 +70,28 @@ export function InvoicesTable({ ucId }: { ucId: string }) {
     <div className="overflow-hidden rounded-lg border">
       <Table>
         <TableHeader>
-          <TableRow className="bg-muted/30">
-            <TableHead>Mês</TableHead>
-            <TableHead className="text-right">Consumo</TableHead>
-            <TableHead className="text-right">Valor</TableHead>
-            <TableHead>Bandeira</TableHead>
-            <TableHead>Vencimento</TableHead>
-            <TableHead className="text-right">Status</TableHead>
-            <TableHead className="border-l text-right">Ajustar</TableHead>
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase">
+              Mês
+            </TableHead>
+            <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase">
+              Consumo
+            </TableHead>
+            <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase">
+              Valor
+            </TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase">
+              Bandeira
+            </TableHead>
+            <TableHead className="text-xs font-medium text-muted-foreground uppercase">
+              Vencimento
+            </TableHead>
+            <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase">
+              Status
+            </TableHead>
+            <TableHead className="border-l text-right text-xs font-medium text-muted-foreground uppercase">
+              Ajustar
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

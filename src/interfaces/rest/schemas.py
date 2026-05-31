@@ -205,9 +205,15 @@ class MemoryPutRequest(BaseModel):
     valor: Any
 
 
+class ComponentHealthDTO(BaseModel):
+    name: str  # api | whatsapp | agente
+    status: str  # ok | down | unknown
+
+
 class HealthDTO(BaseModel):
-    status: str
+    status: str  # ok | degraded
     db: str
+    components: list[ComponentHealthDTO] = []
 
 
 class KbResultDTO(BaseModel):

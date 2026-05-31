@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from src.application.ports import KnowledgeRetrievalPort, ObjectStorage
 from src.application.services import (
     BillingService,
+    HealthService,
     InvoiceDocumentService,
     MemoryService,
     OutageService,
@@ -23,6 +24,7 @@ from src.application.services import (
 from src.config import settings
 from src.infrastructure.db import SessionLocal
 from src.infrastructure.events.nats_bus import NatsEventBus
+from src.infrastructure.events.omni_health import HttpxOmniHealth
 from src.infrastructure.events.omni_sender import HttpxOmniSender
 from src.infrastructure.knowledge import FilesystemKnowledgeRetrieval
 from src.infrastructure.pdf.weasyprint_renderer import WeasyPrintInvoiceRenderer
@@ -47,6 +49,14 @@ def _knowledge_retrieval() -> FilesystemKnowledgeRetrieval:
 
 def get_knowledge_retrieval() -> KnowledgeRetrievalPort:
     return _knowledge_retrieval()
+
+
+@lru_cache(maxsize=1)
+def get_health_service() -> HealthService:
+    # Checa o Omni do sandbox (WhatsApp + Agente). Sem wiring -> 'unknown' (SPEC-014).
+    return HealthService(
+        HttpxOmniHealth(settings.omni_url, settings.omni_api_key, settings.omni_instance_id)
+    )
 
 
 def get_session() -> Iterator[Session]:

@@ -13,6 +13,11 @@ class TestHealth:
         r = ctx.client.get("/health")
         assert r.status_code == 200 and r.json()["status"] == "ok"
 
+    def test_health_componentes(self, ctx: SimpleNamespace) -> None:
+        # SPEC-014: /health agrega api + whatsapp + agente.
+        comps = {c["name"]: c["status"] for c in ctx.client.get("/health").json()["components"]}
+        assert comps == {"api": "ok", "whatsapp": "ok", "agente": "ok"}
+
 
 class TestBillingApi:
     def test_find_customer_ok(self, ctx: SimpleNamespace) -> None:

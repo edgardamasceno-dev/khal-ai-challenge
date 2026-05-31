@@ -113,6 +113,14 @@ class OmniSender(Protocol):
 
 
 @runtime_checkable
+class ChannelHealthPort(Protocol):
+    """Saúde do canal (Omni): WhatsApp e Agente. 'ok'|'down'|'unknown'."""
+
+    def whatsapp(self) -> str: ...
+    def agente(self) -> str: ...
+
+
+@runtime_checkable
 class UnitOfWork(Protocol):
     def commit(self) -> None: ...
     def rollback(self) -> None: ...

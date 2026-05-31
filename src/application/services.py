@@ -7,10 +7,12 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from src.application.ports import (
     ChamadoRepository,
+    ChannelHealthPort,
     EventBus,
     FaturaRepository,
     HandoffRepository,
@@ -48,6 +50,31 @@ def _parse_dt(valor: object) -> dt.datetime | None:
         return dt.datetime.fromisoformat(valor)
     except ValueError:
         return None
+
+
+@dataclass(frozen=True)
+class HealthReport:
+    status: str  # ok | degraded
+    db: str  # ok | down
+    components: list[tuple[str, str]]  # (name, status)
+
+
+class HealthService:
+    """Agrega a saúde dos componentes: API (db), WhatsApp e Agente (SPEC-014)."""
+
+    def __init__(self, channel: ChannelHealthPort) -> None:
+        self._channel = channel
+
+    def check(self, db_ok: bool) -> HealthReport:
+        componentes = [
+            ("api", "ok" if db_ok else "down"),
+            ("whatsapp", self._channel.whatsapp()),
+            ("agente", self._channel.agente()),
+        ]
+        geral = "ok" if all(status == "ok" for _, status in componentes) else "degraded"
+        return HealthReport(
+            status=geral, db="ok" if db_ok else "down", components=componentes
+        )
 
 
 class BillingService:

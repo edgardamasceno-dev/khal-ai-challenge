@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from src.application.services import (
     BillingService,
+    HealthService,
     InvoiceDocumentService,
     MemoryService,
     OutageService,
@@ -28,6 +29,7 @@ from src.domain.shared.value_objects import CPF, Dinheiro, Telefone
 from src.interfaces.rest.app import create_app
 from src.interfaces.rest.dependencies import (
     get_billing_service,
+    get_health_service,
     get_invoice_document_service,
     get_knowledge_retrieval,
     get_memory_service,
@@ -93,6 +95,14 @@ class _FakeSession:
         return None
 
 
+class _FakeChannelHealth:
+    def whatsapp(self) -> str:
+        return "ok"
+
+    def agente(self) -> str:
+        return "ok"
+
+
 @pytest.fixture
 def ctx() -> Iterator[SimpleNamespace]:
     ana = Titular(
@@ -154,6 +164,7 @@ def ctx() -> Iterator[SimpleNamespace]:
     app.dependency_overrides[get_memory_service] = lambda: memory
     app.dependency_overrides[get_knowledge_retrieval] = lambda: knowledge
     app.dependency_overrides[get_session] = lambda: _FakeSession()
+    app.dependency_overrides[get_health_service] = lambda: HealthService(_FakeChannelHealth())
 
     with TestClient(app) as client:
         yield SimpleNamespace(

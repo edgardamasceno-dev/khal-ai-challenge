@@ -26,15 +26,22 @@ import {
 
 export function ProactiveSection({ phone }: { phone: string }) {
   const [data, setData] = useState<ProactiveCandidates | null>(null)
+  const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
 
   async function load() {
-    if (!phone) return
+    if (!phone) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     try {
       setData(await api.getProactiveCandidates(phone))
     } catch {
       setData(null)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -65,7 +72,7 @@ export function ProactiveSection({ phone }: { phone: string }) {
     }
   }
 
-  if (data === null) {
+  if (loading) {
     return (
       <div className="space-y-3">
         {Array.from({ length: 2 }).map((_, i) => (
@@ -78,7 +85,7 @@ export function ProactiveSection({ phone }: { phone: string }) {
     )
   }
 
-  if (!data.encontrado) {
+  if (!data?.encontrado) {
     return (
       <Empty className="border py-12">
         <EmptyHeader>

@@ -7,11 +7,17 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
-from src.application.services import BillingService, InvoiceDocumentService
+from src.application.services import (
+    BillingService,
+    InvoiceDocumentService,
+    ProactiveService,
+)
 from src.interfaces.rest.dependencies import (
     get_billing_service,
     get_invoice_document_service,
+    get_proactive_service,
 )
 from src.interfaces.rest.schemas import (
     ContractDTO,
@@ -72,6 +78,31 @@ def get_invoice_status(
     svc: BillingService = Depends(get_billing_service),
 ) -> InvoiceDTO:
     return InvoiceDTO.from_entity(svc.get_invoice(fatura_id))
+
+
+class InvoiceStatusReq(BaseModel):
+    status: str = Field(description="em_aberto | vencida")
+
+
+@router.patch("/invoices/{fatura_id}/status", response_model=InvoiceDTO)
+def update_invoice_status(
+    fatura_id: uuid.UUID,
+    req: InvoiceStatusReq,
+    svc: BillingService = Depends(get_billing_service),
+    proactive: ProactiveService = Depends(get_proactive_service),
+) -> InvoiceDTO:
+    """Operador ajusta o status da fatura (em_aberto/vencida). Reverter de 'paga'
+    desfaz a baixa (SPEC-011). 'vencida' dispara o aviso proativo (best-effort);
+    'em aberto' é silencioso."""
+    fatura = svc.atualizar_status_fatura(fatura_id, req.status)
+    if req.status == "vencida":
+        titular = svc.get_titular_por_fatura(fatura_id)
+        proactive.disparar_por_telefone(
+            titular.telefone.value, "pagamento", "vencida",
+            {"fatura_id": str(fatura_id), "mes": fatura.mes_referencia,
+             "valor": fatura.valor.formatado()},
+        )
+    return InvoiceDTO.from_entity(fatura)
 
 
 @router.get("/invoices/{fatura_id}/pdf", response_model=InvoicePdfDTO)

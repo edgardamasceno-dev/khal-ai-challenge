@@ -62,6 +62,7 @@ def get_billing_service(session: Session = Depends(get_session)) -> BillingServi
         SqlTitularRepository(session),
         SqlUnidadeRepository(session),
         SqlFaturaRepository(session),
+        SqlAlchemyUnitOfWork(session),
     )
 
 

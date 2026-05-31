@@ -59,8 +59,11 @@ class _FakeRenderer:
 
 
 class _FakeBus:
+    def __init__(self) -> None:
+        self.published: list[str] = []
+
     def publish(self, subject: str, payload: dict) -> None:  # type: ignore[type-arg]
-        pass
+        self.published.append(subject)
 
 
 class _FakeSender:
@@ -122,15 +125,17 @@ def ctx() -> Iterator[SimpleNamespace]:
     memorias = FakeMemoriaRepository()
     uow = FakeUnitOfWork()
 
-    billing = BillingService(titulares, FakeUnidadeRepository([uc]), FakeFaturaRepository([fatura]))
+    faturas_repo = FakeFaturaRepository([fatura])
+    billing = BillingService(titulares, FakeUnidadeRepository([uc]), faturas_repo, uow)
     invoice_doc = InvoiceDocumentService(
         FakeFaturaRepository([fatura]), FakeUnidadeRepository([uc]), titulares,
         _FakeRenderer(), _MemStorage(),
         clock=lambda: dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
+    bus = _FakeBus()
     proactive = ProactiveService(
-        _FakeBus(), _FakeSender(), memorias, titulares,
-        FakeFaturaRepository([fatura]), FakeInterrupcaoRepository([outage]), uow,
+        bus, _FakeSender(), memorias, titulares,
+        faturas_repo, FakeInterrupcaoRepository([outage]), uow,
         clock=lambda: dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
     outage_svc = OutageService(FakeInterrupcaoRepository([outage]))
@@ -151,4 +156,7 @@ def ctx() -> Iterator[SimpleNamespace]:
     app.dependency_overrides[get_session] = lambda: _FakeSession()
 
     with TestClient(app) as client:
-        yield SimpleNamespace(client=client, chamados=chamados, handoffs=handoffs)
+        yield SimpleNamespace(
+            client=client, chamados=chamados, handoffs=handoffs, bus=bus,
+            fatura_id=FAT_ID,
+        )

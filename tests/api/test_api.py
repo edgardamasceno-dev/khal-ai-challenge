@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 
 ANA_ID = "11111111-1111-1111-1111-111111111111"
@@ -49,6 +50,28 @@ class TestBillingApi:
         r = ctx.client.get(f"/invoices/{FAT_ID}/pdf")
         assert r.status_code == 200
         assert r.json()["url"].endswith(f"invoices/{FAT_ID}.pdf")
+
+    def test_patch_status_vencida_muta_e_notifica(self, ctx: SimpleNamespace) -> None:
+        r = ctx.client.patch(f"/invoices/{FAT_ID}/status", json={"status": "vencida"})
+        assert r.status_code == 200 and r.json()["status"] == "vencida"
+        assert ctx.client.get(f"/invoices/{FAT_ID}").json()["status"] == "vencida"
+        assert "utilitycx.pagamento.vencida" in ctx.bus.published  # disparou o aviso
+
+    def test_patch_status_em_aberto_nao_notifica(self, ctx: SimpleNamespace) -> None:
+        r = ctx.client.patch(f"/invoices/{FAT_ID}/status", json={"status": "em_aberto"})
+        assert r.status_code == 200 and r.json()["status"] == "em_aberto"
+        assert ctx.bus.published == []  # silencioso
+
+    def test_patch_status_invalido_422(self, ctx: SimpleNamespace) -> None:
+        # 'paga' não é editável aqui (baixa é pela aba Proativos)
+        assert ctx.client.patch(
+            f"/invoices/{FAT_ID}/status", json={"status": "paga"}
+        ).status_code == 422
+
+    def test_patch_status_fatura_inexistente_404(self, ctx: SimpleNamespace) -> None:
+        assert ctx.client.patch(
+            f"/invoices/{uuid.uuid4()}/status", json={"status": "vencida"}
+        ).status_code == 404
 
 
 class TestOutageApi:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { BotMessageSquare, ChevronUp, Hand, Send } from "lucide-react"
 import { api, type ChatMessage } from "@/lib/api"
@@ -26,10 +26,33 @@ export function ChatSection({ phone }: { phone: string }) {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const seen = useRef<Set<string>>(new Set())
+  // altura antes de um "mostrar mais" (prepend) — sinaliza preservar o scroll.
+  const prependBefore = useRef<number | null>(null)
 
-  const scrollToBottom = useCallback(() => {
+  // Gruda no fim quando `msgs` muda (carga inicial, nova mensagem, envio);
+  // no "mostrar mais" preserva a posição. useLayoutEffect roda antes do paint.
+  useLayoutEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el) return
+    if (prependBefore.current !== null) {
+      el.scrollTop = el.scrollHeight - prependBefore.current
+      prependBefore.current = null
+      return
+    }
+    el.scrollTop = el.scrollHeight
+  }, [msgs])
+
+  const merge = useCallback((novas: ChatMessage[]) => {
+    if (!novas.length) return
+    novas.forEach((m) => seen.current.add(m.id))
+    setMsgs((prev) => {
+      // reconcilia: descarta a otimista cujo texto a mensagem real (do agente) confirma.
+      const reconc = prev.filter(
+        (p) =>
+          !(p.id.startsWith("tmp-") && novas.some((n) => !n.do_cliente && n.texto === p.texto)),
+      )
+      return [...reconc, ...novas]
+    })
   }, [])
 
   // Carga inicial + troca de cliente.
@@ -48,13 +71,12 @@ export function ChatSection({ phone }: { phone: string }) {
         setCursor(t.cursor)
         setTemMais(t.tem_mais)
         setPausado(s.pausado)
-        requestAnimationFrame(scrollToBottom)
       })
       .catch(() => active && setMsgs([]))
     return () => {
       active = false
     }
-  }, [phone, scrollToBottom])
+  }, [phone])
 
   // Auto-refresh: novas mensagens (append) + status, preservando as páginas carregadas.
   useEffect(() => {
@@ -62,23 +84,17 @@ export function ChatSection({ phone }: { phone: string }) {
       Promise.all([api.chatMessages(phone, PAGE), api.chatStatus(phone)])
         .then(([t, s]) => {
           setPausado(s.pausado)
-          const novas = [...t.mensagens].reverse().filter((m) => !seen.current.has(m.id))
-          if (novas.length) {
-            novas.forEach((m) => seen.current.add(m.id))
-            setMsgs((prev) => [...prev, ...novas])
-            requestAnimationFrame(scrollToBottom)
-          }
+          merge([...t.mensagens].reverse().filter((m) => !seen.current.has(m.id)))
         })
         .catch(() => {})
     }, POLL_MS)
     return () => clearInterval(id)
-  }, [phone, scrollToBottom])
+  }, [phone, merge])
 
   async function mostrarMais() {
     if (!cursor) return
     setLoadingMore(true)
-    const el = scrollRef.current
-    const antes = el?.scrollHeight ?? 0
+    prependBefore.current = scrollRef.current?.scrollHeight ?? 0
     try {
       const t = await api.chatMessages(phone, PAGE, cursor)
       const crono = [...t.mensagens].reverse().filter((m) => !seen.current.has(m.id))
@@ -86,10 +102,6 @@ export function ChatSection({ phone }: { phone: string }) {
       setMsgs((prev) => [...crono, ...prev]) // prepend (mais antigas no topo)
       setCursor(t.cursor)
       setTemMais(t.tem_mais)
-      requestAnimationFrame(() => {
-        const e = scrollRef.current
-        if (e) e.scrollTop = e.scrollHeight - antes // preserva a posição
-      })
     } finally {
       setLoadingMore(false)
     }
@@ -108,23 +120,23 @@ export function ChatSection({ phone }: { phone: string }) {
     }
   }
 
+  // Envio otimista: mostra a mensagem na hora; o auto-refresh reconcilia com a real.
   async function enviar() {
     const t = texto.trim()
     if (!t) return
-    setBusy(true)
+    const tmp: ChatMessage = {
+      id: `tmp-${Date.now()}`,
+      texto: t,
+      do_cliente: false,
+      em: new Date().toISOString(),
+    }
+    setMsgs((prev) => [...prev, tmp])
+    setTexto("")
     try {
       await api.chatSend(phone, t)
-      setTexto("")
-      // o auto-refresh traz a mensagem enviada; força um refresh imediato
-      const r = await api.chatMessages(phone, PAGE)
-      const novas = [...r.mensagens].reverse().filter((m) => !seen.current.has(m.id))
-      novas.forEach((m) => seen.current.add(m.id))
-      if (novas.length) setMsgs((prev) => [...prev, ...novas])
-      requestAnimationFrame(scrollToBottom)
     } catch {
       toast.error("Não foi possível enviar a mensagem")
-    } finally {
-      setBusy(false)
+      setMsgs((prev) => prev.filter((m) => m.id !== tmp.id))
     }
   }
 
@@ -147,7 +159,16 @@ export function ChatSection({ phone }: { phone: string }) {
         </Button>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto bg-muted/20 p-4">
+      <div
+        ref={scrollRef}
+        className={cn(
+          "flex-1 space-y-2 overflow-x-hidden overflow-y-auto bg-muted/20 p-4",
+          "[&::-webkit-scrollbar]:w-1.5",
+          "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-foreground/15",
+          "hover:[&::-webkit-scrollbar-thumb]:bg-foreground/25",
+          "[&::-webkit-scrollbar-track]:bg-transparent",
+        )}
+      >
         {temMais && (
           <div className="flex justify-center">
             <Button size="sm" variant="ghost" disabled={loadingMore} onClick={mostrarMais}>
@@ -161,16 +182,11 @@ export function ChatSection({ phone }: { phone: string }) {
           </p>
         )}
         {msgs.map((m) => (
-          <div
-            key={m.id}
-            className={cn("flex", m.do_cliente ? "justify-start" : "justify-end")}
-          >
+          <div key={m.id} className={cn("flex", m.do_cliente ? "justify-start" : "justify-end")}>
             <div
               className={cn(
-                "max-w-[78%] rounded-lg px-3 py-1.5 text-sm whitespace-pre-wrap",
-                m.do_cliente
-                  ? "bg-background border"
-                  : "bg-primary text-primary-foreground",
+                "max-w-[78%] rounded-lg px-3 py-1.5 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]",
+                m.do_cliente ? "border bg-background" : "bg-primary text-primary-foreground",
               )}
             >
               {m.texto}
@@ -197,7 +213,7 @@ export function ChatSection({ phone }: { phone: string }) {
               placeholder="Responder ao cliente…"
               disabled={busy}
             />
-            <Button onClick={enviar} disabled={busy || !texto.trim()}>
+            <Button onClick={enviar} disabled={!texto.trim()}>
               <Send /> Enviar
             </Button>
           </div>

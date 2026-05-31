@@ -138,6 +138,9 @@ def get_ticketing_service(session: Session = Depends(get_session)) -> TicketingS
         SqlAlchemyUnitOfWork(session),
         control=_chat_directory(),  # pausa/retoma a IA no Omni (SPEC-016)
         directory=_chat_directory(),  # normaliza o remetente p/ casar com a aba Chat
+        sender=HttpxOmniSender(  # notifica o titular ao abrir/resolver (SPEC-020)
+            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+        ),
     )
 
 

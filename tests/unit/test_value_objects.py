@@ -8,6 +8,7 @@ from src.domain.shared.value_objects import (
     Dinheiro,
     MesReferencia,
     Protocolo,
+    StatusChamado,
     Telefone,
     TipoChamado,
 )
@@ -82,3 +83,16 @@ class TestTipoChamado:
     def test_valor_invalido(self) -> None:
         with pytest.raises(ValueError):
             TipoChamado("xpto")
+
+
+class TestStatusChamado:
+    def test_expoe_exatamente_aberto_e_resolvido(self) -> None:
+        # SPEC-020: por ora o ciclo de vida tem so estes dois estados.
+        assert {s.value for s in StatusChamado} == {"aberto", "resolvido"}
+        assert StatusChamado.aberto.value == "aberto"
+        assert StatusChamado.resolvido.value == "resolvido"
+
+    @pytest.mark.parametrize("invalido", ["cancelado", "em_andamento", "ABERTO", ""])
+    def test_valor_invalido(self, invalido: str) -> None:
+        with pytest.raises(ValueError):
+            StatusChamado(invalido)

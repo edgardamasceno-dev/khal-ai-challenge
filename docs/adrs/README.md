@@ -13,5 +13,8 @@ Decisoes arquiteturais relevantes desta entrega. Cada ADR e imutavel; mudancas v
 | [0007](./ADR-0007-agente-claude-code-auth.md) | Runtime e autenticacao do agente: Claude Code (sem key dedicada) | Accepted |
 | [0008](./ADR-0008-seeder-programatico-python.md) | Seeder programatico em Python (personas dinamicas) | Accepted |
 | [0009](./ADR-0009-object-storage-faturas.md) | Object storage (MinIO) + render WeasyPrint para faturas | Accepted |
+| [0010](./ADR-0010-media-egress-optin.md) | Rota direta de midia opt-in (anexo no WhatsApp vs egress isolado) | Accepted |
+| [0011](./ADR-0011-personas-canonicas-deterministicas.md) | Personas canonicas com cenario fixo por nome (overlay deterministico) | Accepted |
+| [0012](./ADR-0012-auditoria-observabilidade-tool-call.md) | Auditoria e observabilidade por tool-call MCP (best-effort, PII mascarada) | Accepted |
 
 Formato: Context, Decision, Consequences, Alternatives.

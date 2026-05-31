@@ -230,10 +230,17 @@ export const api = {
     uc_id: string | null
     tipo: string
     descricao: string | null
+    notificar?: boolean
   }) =>
     request<CreateTicketResponse>("/tickets", {
       method: "POST",
       body: JSON.stringify({ ...input, idempotency_key: crypto.randomUUID() }),
+    }),
+
+  // SPEC-020: encerra o chamado como resolvido e dispara WhatsApp ao titular.
+  resolveTicket: (protocolo: string) =>
+    request<Ticket>(`/tickets/${encodeURIComponent(protocolo)}/resolve`, {
+      method: "POST",
     }),
 
   requestHandoff: (input: { chamado_id: string | null; motivo: string | null }) =>

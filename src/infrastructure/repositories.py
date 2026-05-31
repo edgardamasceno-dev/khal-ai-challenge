@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from src.application.ports import AuditRecord
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
 from src.domain.outage.entities import Interrupcao
@@ -27,6 +28,7 @@ from src.infrastructure.orm import (
     MemoriaORM,
     PagamentoORM,
     TitularORM,
+    ToolCallAuditORM,
     UnidadeORM,
 )
 
@@ -280,6 +282,19 @@ class SqlChamadoRepository:
         self._s.flush()
         return _to_chamado(o)
 
+    def set_status(
+        self, protocolo: str, status: str, atualizado_em: dt.datetime
+    ) -> Chamado | None:
+        o = self._s.execute(
+            select(ChamadoORM).where(ChamadoORM.protocolo == protocolo)
+        ).scalar_one_or_none()
+        if o is None:
+            return None
+        o.status = status
+        o.atualizado_em = atualizado_em
+        self._s.flush()
+        return _to_chamado(o)
+
 
 class SqlHandoffRepository:
     def __init__(self, session: Session) -> None:
@@ -357,3 +372,31 @@ class SqlAlchemyUnitOfWork:
 
     def rollback(self) -> None:
         self._s.rollback()
+
+
+class SqlToolCallAuditSink:
+    """Sink SQL da auditoria por tool-call (T3). Persiste o `AuditRecord` na
+    tabela `tool_call_audit`, respeitando o CHECK de result_status (no banco).
+
+    Cada escrita é autocontida (commit próprio) para não acoplar a auditoria à
+    transação de negócio da tool. Falhas NÃO são engolidas aqui — quem chama
+    (o RECORDER) é o responsável por garantir o best-effort.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def record(self, registro: AuditRecord) -> None:
+        self._s.add(
+            ToolCallAuditORM(
+                id=uuid.uuid4(),
+                trace_id=registro.trace_id,
+                chat_id=registro.chat_id,
+                tool_name=registro.tool_name,
+                input_redacted=registro.input_redacted,
+                result_status=registro.result_status,
+                latency_ms=registro.latency_ms,
+                error_code=registro.error_code,
+            )
+        )
+        self._s.commit()

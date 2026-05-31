@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from src.domain.billing.documento import FaturaDetalhada
@@ -86,6 +87,9 @@ class ChamadoRepository(Protocol):
     def get_by_idempotency_key(self, key: str) -> Chamado | None: ...
     def list_for_titular(self, titular_id: uuid.UUID) -> list[Chamado]: ...
     def add(self, chamado: Chamado, idempotency_key: str) -> Chamado: ...
+    def set_status(
+        self, protocolo: str, status: str, atualizado_em: dt.datetime
+    ) -> Chamado | None: ...
 
 
 @runtime_checkable
@@ -158,3 +162,28 @@ class ChatTranscriptPort(Protocol):
 class UnitOfWork(Protocol):
     def commit(self) -> None: ...
     def rollback(self) -> None: ...
+
+
+@runtime_checkable
+class ToolCallAuditSink(Protocol):
+    """Destino da auditoria por chamada de ferramenta MCP (T3, observabilidade).
+
+    Puramente observacional: best-effort. O `RECORDER` que o consome engole
+    qualquer falha — uma escrita de auditoria que quebra NUNCA derruba a tool
+    nem altera seu retorno/guardrails. O `record` recebe PII já mascarada.
+    """
+
+    def record(self, registro: AuditRecord) -> None: ...
+
+
+@dataclass(frozen=True)
+class AuditRecord:
+    """Registro imutável de uma chamada de ferramenta MCP (input já mascarado)."""
+
+    tool_name: str
+    result_status: str  # 'ok' | 'error' | 'denied' (CHECK no banco)
+    latency_ms: int
+    input_redacted: dict[str, Any]
+    error_code: str | None = None
+    trace_id: str | None = None
+    chat_id: str | None = None

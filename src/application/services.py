@@ -36,8 +36,17 @@ from src.domain.notifications.templates import render_notificacao
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.errors import InvariantError, NotFoundError
 from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
-from src.domain.shared.value_objects import Protocolo, Telefone, TipoChamado
+from src.domain.shared.value_objects import (
+    Protocolo,
+    StatusChamado,
+    Telefone,
+    TipoChamado,
+)
 from src.domain.ticketing.entities import Chamado, Handoff
+from src.domain.ticketing.mensagens import (
+    mensagem_chamado_aberto,
+    mensagem_chamado_resolvido,
+)
 
 Clock = Callable[[], dt.datetime]
 
@@ -334,6 +343,7 @@ class TicketingService:
         uow: UnitOfWork,
         control: ChannelControlPort | None = None,
         directory: ChatDirectoryPort | None = None,
+        sender: OmniSender | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._chamados = chamados
@@ -342,6 +352,7 @@ class TicketingService:
         self._uow = uow
         self._control = control
         self._directory = directory
+        self._sender = sender
         self._clock: Clock = clock or _utcnow
 
     def open_ticket(
@@ -352,12 +363,14 @@ class TicketingService:
         tipo: str,
         descricao: str | None,
         idempotency_key: str,
+        notificar: bool = False,
     ) -> tuple[Chamado, bool]:
         existente = self._chamados.get_by_idempotency_key(idempotency_key)
         if existente is not None:
             return existente, False
 
-        if self._titulares.get(titular_id) is None:
+        titular = self._titulares.get(titular_id)
+        if titular is None:
             raise NotFoundError("Titular nao encontrado")
 
         try:
@@ -374,7 +387,7 @@ class TicketingService:
             uc_id=uc_id,
             tipo=tipo_vo,
             descricao=descricao,
-            status="aberto",
+            status=StatusChamado.aberto.value,
             sla_horas=tipo_vo.sla_horas,
             canal="whatsapp",
             aberto_em=agora,
@@ -386,6 +399,10 @@ class TicketingService:
         except Exception:
             self._uow.rollback()
             raise
+        # Notificação só no fluxo do operador (UI); o agente MCP abre com
+        # notificar=False, pois ele já responde o cliente na própria conversa.
+        if notificar:
+            self._notificar(titular, mensagem_chamado_aberto(titular.nome, salvo))
         return salvo, True
 
     def get_ticket_status(self, protocolo: str) -> Chamado:
@@ -393,6 +410,35 @@ class TicketingService:
         if chamado is None:
             raise NotFoundError(f"Chamado {protocolo} nao encontrado")
         return chamado
+
+    def resolve_ticket(self, protocolo: str) -> Chamado:
+        """Encerra o chamado como `resolvido` e notifica o titular por WhatsApp
+        (SPEC-020). Idempotente: reencerrar um chamado já resolvido não reenvia."""
+        chamado = self._chamados.get_by_protocolo(protocolo)
+        if chamado is None:
+            raise NotFoundError(f"Chamado {protocolo} nao encontrado")
+        if chamado.status == StatusChamado.resolvido.value:
+            return chamado
+        try:
+            atualizado = self._chamados.set_status(
+                protocolo, StatusChamado.resolvido.value, self._clock()
+            )
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        assert atualizado is not None
+        titular = self._titulares.get(atualizado.titular_id)
+        if titular is not None:
+            self._notificar(titular, mensagem_chamado_resolvido(titular.nome, atualizado))
+        return atualizado
+
+    def _notificar(self, titular: Titular, texto: str) -> None:
+        """Envia o texto ao WhatsApp do titular. Best-effort: o `OmniSender` não
+        lança (retorna bool), e sem sender configurado é no-op."""
+        if self._sender is None:
+            return
+        self._sender.send_text(titular.telefone.value, texto)
 
     def list_customer_tickets(self, titular_id: uuid.UUID) -> list[Chamado]:
         return self._chamados.list_for_titular(titular_id)

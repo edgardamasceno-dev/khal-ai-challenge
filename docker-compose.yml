@@ -76,6 +76,8 @@ services:
       NATS_URL: ${NATS_URL:-nats://nats:4222}
       OMNI_URL: ${OMNI_URL:-http://omni:8882}
       OMNI_API_KEY: ${OMNI_API_KEY:-}
+      # Necessário p/ o backend disparar WhatsApp ao abrir/encerrar chamado (SPEC-020).
+      OMNI_INSTANCE_ID: ${OMNI_INSTANCE_ID:-}
     depends_on:
       database:
         condition: service_healthy

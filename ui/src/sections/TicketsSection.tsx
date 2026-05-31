@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { BotMessageSquare, Headphones, Inbox, Plus } from "lucide-react"
+import {
+  BotMessageSquare,
+  ChevronDown,
+  CircleCheckBig,
+  Headphones,
+  Inbox,
+  Plus,
+} from "lucide-react"
 import { api, ApiError, type Customer, type Handoff, type Ticket } from "@/lib/api"
 import {
   formatDateTime,
@@ -38,6 +45,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -67,6 +80,25 @@ interface Props {
 }
 
 export function TicketsSection({ customer, selectedUcId, tickets, onChanged }: Props) {
+  const [busy, setBusy] = useState<string | null>(null)
+
+  async function resolve(t: Ticket) {
+    setBusy(t.id)
+    try {
+      await api.resolveTicket(t.protocolo)
+      toast.success("Chamado resolvido", {
+        description: `Protocolo ${t.protocolo} · cliente avisado no WhatsApp.`,
+      })
+      onChanged()
+    } catch (e) {
+      toast.error("Não foi possível encerrar o chamado", {
+        description: e instanceof ApiError ? e.message : String(e),
+      })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end gap-2">
@@ -112,6 +144,7 @@ export function TicketsSection({ customer, selectedUcId, tickets, onChanged }: P
                 <TableHead className="text-right text-xs font-medium text-muted-foreground uppercase">
                   Status
                 </TableHead>
+                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -136,6 +169,28 @@ export function TicketsSection({ customer, selectedUcId, tickets, onChanged }: P
                   </TableCell>
                   <TableCell className="text-right">
                     <TicketStatusBadge status={t.status} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {t.status === "aberto" && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            disabled={busy !== null}
+                            aria-label="Ações do chamado"
+                          >
+                            <ChevronDown />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => resolve(t)}>
+                            <CircleCheckBig /> Encerrar como resolvido
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -169,10 +224,15 @@ function CreateTicketDialog({
         uc_id: ucId,
         tipo,
         descricao: descricao.trim() || null,
+        notificar: true,
       })
       toast.success(
         res.criado_agora ? "Chamado aberto" : "Chamado já existente (idempotente)",
-        { description: `Protocolo ${res.ticket.protocolo} · SLA ${res.ticket.sla_horas}h` },
+        {
+          description: res.criado_agora
+            ? `Protocolo ${res.ticket.protocolo} · SLA ${res.ticket.sla_horas}h · cliente avisado no WhatsApp.`
+            : `Protocolo ${res.ticket.protocolo} · SLA ${res.ticket.sla_horas}h`,
+        },
       )
       setOpen(false)
       setDescricao("")

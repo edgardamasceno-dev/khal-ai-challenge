@@ -284,28 +284,30 @@ class InvoiceDocumentService:
         return DocumentoFatura(url=url, presigned=presign, expires_at=expira, gerado_agora=gerou)
 
     def enviar_2a_via(self, fatura_id: uuid.UUID, expires: int = 3600) -> dict[str, object]:
-        """Envia a 2ª via ao titular: PDF **anexo** no WhatsApp + **link** no texto
-        (ADR-0003 / SPEC-017). Destino = telefone cadastrado do dono da fatura."""
+        """Envia a 2ª via ao titular: **link** no texto (canal confiável) + PDF **anexo**
+        best-effort (ADR-0003 / SPEC-017). O anexo depende do upload de mídia do WhatsApp,
+        que pode falhar em egress restrito — por isso o link (público, via gateway) sempre
+        vai e a tool não bloqueia. Destino = telefone cadastrado do dono da fatura."""
         detalhe = self._detalhar(fatura_id)  # resolve titular dono + valida a fatura
-        doc = self.obter_ou_gerar(fatura_id, presign=True, expires=expires)
-        enviado = False
+        doc = self.obter_ou_gerar(fatura_id, presign=False)  # URL pública (gateway)
+        enviado_link = enviado_anexo = False
         if self._sender is not None:
-            pdf = self._renderer.render(detalhe)
-            mes = detalhe.fatura.mes_referencia
             telefone = detalhe.titular.telefone.value
-            caption = f"Luz do Vale — 2ª via da fatura de {mes}."
-            enviado = self._sender.send_document(
-                telefone, pdf, f"fatura-{mes}.pdf", caption
+            mes = detalhe.fatura.mes_referencia
+            enviado_link = self._sender.send_text(
+                telefone, f"📄 Aqui está a 2ª via da sua fatura de {mes}: {doc.url}"
             )
-            if enviado:
-                self._sender.send_text(telefone, f"Link da sua 2ª via: {doc.url}")
+            pdf = self._renderer.render(detalhe)
+            enviado_anexo = self._sender.send_document(
+                telefone, pdf, f"fatura-{mes}.pdf", f"Luz do Vale — fatura de {mes}."
+            )
         return {
-            "enviado": enviado,
+            "enviado": enviado_link or enviado_anexo,
+            "enviado_link": enviado_link,
+            "enviado_anexo": enviado_anexo,
             "mes_referencia": detalhe.fatura.mes_referencia,
             "status": detalhe.fatura.status,
             "url": doc.url,
-            "presigned": doc.presigned,
-            "expires_at": doc.expires_at.isoformat() if doc.expires_at else None,
         }
 
 

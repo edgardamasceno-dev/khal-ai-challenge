@@ -45,7 +45,7 @@ async def _handle(msg: object) -> None:
     try:
         svc = ProactiveService(
             NatsEventBus(settings.nats_url),
-            HttpxOmniSender(settings.omni_url, settings.omni_api_key),
+            HttpxOmniSender(settings.omni_url, settings.omni_api_key, settings.omni_instance_id),
             SqlMemoriaRepository(session), SqlTitularRepository(session),
             SqlFaturaRepository(session), SqlInterrupcaoRepository(session),
             SqlAlchemyUnitOfWork(session),

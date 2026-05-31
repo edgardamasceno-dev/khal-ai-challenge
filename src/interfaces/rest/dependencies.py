@@ -110,7 +110,7 @@ def get_memory_service(session: Session = Depends(get_session)) -> MemoryService
 def get_proactive_service(session: Session = Depends(get_session)) -> ProactiveService:
     return ProactiveService(
         NatsEventBus(settings.nats_url),
-        HttpxOmniSender(settings.omni_url, settings.omni_api_key),
+        HttpxOmniSender(settings.omni_url, settings.omni_api_key, settings.omni_instance_id),
         SqlMemoriaRepository(session),
         SqlTitularRepository(session),
         SqlFaturaRepository(session),

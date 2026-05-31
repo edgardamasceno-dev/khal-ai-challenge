@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     nats_url: str = "nats://nats:4222"
     omni_url: str = "http://omni:8882"  # REST do Omni (envio de texto); best-effort
     omni_api_key: str = ""
+    omni_instance_id: str = ""  # instância WhatsApp do Omni (sandbox)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

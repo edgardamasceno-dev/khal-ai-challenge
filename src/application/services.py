@@ -53,15 +53,21 @@ def _parse_dt(valor: object) -> dt.datetime | None:
 class BillingService:
     """find_customer_by_phone, list_contracts, get_invoice_status."""
 
+    STATUS_EDITAVEIS = ("em_aberto", "vencida")
+
     def __init__(
         self,
         titulares: TitularRepository,
         unidades: UnidadeRepository,
         faturas: FaturaRepository,
+        uow: UnitOfWork | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._titulares = titulares
         self._unidades = unidades
         self._faturas = faturas
+        self._uow = uow
+        self._clock: Clock = clock or _utcnow
 
     def find_customer_by_phone(self, telefone: str) -> Titular:
         normalizado = Telefone(telefone)
@@ -94,6 +100,36 @@ class BillingService:
         fatura = self._faturas.get(fatura_id)
         if fatura is None:
             raise NotFoundError("Fatura nao encontrada")
+        return fatura
+
+    def get_titular_por_fatura(self, fatura_id: uuid.UUID) -> Titular:
+        """Resolve o titular dono da fatura (fatura -> UC -> titular)."""
+        fatura = self.get_invoice(fatura_id)
+        unidade = self.get_unidade(fatura.uc_id)
+        titular = self._titulares.get(unidade.titular_id)
+        if titular is None:
+            raise NotFoundError("Titular nao encontrado")
+        return titular
+
+    def atualizar_status_fatura(self, fatura_id: uuid.UUID, status: str) -> Fatura:
+        """Operador ajusta o status da fatura (em_aberto/vencida). Muta + commit.
+
+        Reverter de 'paga' desfaz a baixa (remove o pagamento). 'paga' não é
+        aceito aqui — a baixa continua pela aba Proativos (SPEC-010/011).
+        """
+        if status not in self.STATUS_EDITAVEIS:
+            raise InvariantError(
+                f"status invalido: {status!r} (use {self.STATUS_EDITAVEIS})"
+            )
+        fatura = self._faturas.atualizar_status(fatura_id, status, self._clock())
+        if fatura is None:
+            raise NotFoundError("Fatura nao encontrada")
+        if self._uow is not None:
+            try:
+                self._uow.commit()
+            except Exception:
+                self._uow.rollback()
+                raise
         return fatura
 
 

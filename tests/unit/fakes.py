@@ -68,6 +68,16 @@ class FakeFaturaRepository:
                 return f
         return None
 
+    def atualizar_status(
+        self, fatura_id: uuid.UUID, status: str, now: dt.datetime
+    ) -> Fatura | None:
+        for idx, f in enumerate(self._items):
+            if f.id == fatura_id:
+                f = dataclasses.replace(f, status=status)
+                self._items[idx] = f
+                return f
+        return None
+
 
 class FakeInterrupcaoRepository:
     def __init__(self, interrupcoes: list[Interrupcao] | None = None) -> None:

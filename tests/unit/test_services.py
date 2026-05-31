@@ -84,6 +84,7 @@ def _billing() -> BillingService:
         FakeTitularRepository([_ana()], {ANA_ID: [contrato]}),
         FakeUnidadeRepository([_uc()]),
         FakeFaturaRepository([_fatura()]),
+        FakeUnitOfWork(),
     )
 
 
@@ -119,6 +120,23 @@ class TestBillingService:
     def test_list_invoices_filtra_status(self) -> None:
         assert len(_billing().list_invoices(UC_ID, "em_aberto", 12)) == 1
         assert _billing().list_invoices(UC_ID, "paga", 12) == []
+
+    def test_atualizar_status_fatura(self) -> None:
+        svc = _billing()
+        f = svc.atualizar_status_fatura(FAT_ID, "vencida")
+        assert f.status == "vencida"
+        assert svc.get_invoice(FAT_ID).status == "vencida"
+
+    def test_atualizar_status_invalido(self) -> None:
+        with pytest.raises(InvariantError):
+            _billing().atualizar_status_fatura(FAT_ID, "paga")
+
+    def test_atualizar_status_fatura_inexistente(self) -> None:
+        with pytest.raises(NotFoundError):
+            _billing().atualizar_status_fatura(uuid.uuid4(), "vencida")
+
+    def test_get_titular_por_fatura(self) -> None:
+        assert _billing().get_titular_por_fatura(FAT_ID).persona_key == "ana.souza"
 
 
 class TestOutageService:

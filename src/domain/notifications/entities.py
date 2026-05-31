@@ -10,6 +10,7 @@ from src.domain.shared.errors import InvariantError
 # (tipo, subtipo) suportados.
 EVENTOS_VALIDOS: set[tuple[str, str]] = {
     ("pagamento", "confirmado"),
+    ("pagamento", "vencida"),
     ("outage", "aberta"),
     ("outage", "encerrada"),
 }

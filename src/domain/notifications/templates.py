@@ -41,6 +41,13 @@ def render_notificacao(evento: EventoCX) -> str:
             f"Oi, {nome}! ✅ Confirmamos o pagamento da sua fatura de {d.get('mes', '—')} "
             f"no valor de {d.get('valor', '—')}. Obrigado! 🙌"
         )
+    if evento.tipo == "pagamento" and evento.subtipo == "vencida":
+        return (
+            f"Oi, {nome}! ⚠️ Sua fatura de {d.get('mes', '—')} no valor de "
+            f"{d.get('valor', '—')} está *vencida*. Para evitar juros e multa por atraso "
+            "(e risco de suspensão do fornecimento), pague pelo PIX ou boleto o quanto "
+            "antes. Precisa da 2ª via? É só pedir por aqui. 🙂"
+        )
     if evento.tipo == "outage" and evento.subtipo == "aberta":
         prev = _previsao_amigavel(d.get("previsao"))
         prazo = f" Previsão de retorno: {prev}." if prev else ""

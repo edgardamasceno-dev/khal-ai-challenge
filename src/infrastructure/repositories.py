@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
+from sqlalchemy import delete as pg_delete
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -155,6 +156,20 @@ class SqlFaturaRepository:
             ).on_conflict_do_nothing(index_elements=["idempotency_key"])
             self._s.execute(stmt)
             self._s.flush()
+        return _to_fatura(o)
+
+    def atualizar_status(
+        self, fatura_id: uuid.UUID, status: str, now: dt.datetime
+    ) -> Fatura | None:
+        """Operador ajusta o status (em_aberto/vencida). Reverter de 'paga' apaga os
+        pagamentos da fatura (consistência + libera a idempotency_key)."""
+        o = self._s.get(FaturaORM, fatura_id)
+        if o is None:
+            return None
+        if o.status == "paga" and status != "paga":
+            self._s.execute(pg_delete(PagamentoORM).where(PagamentoORM.fatura_id == o.id))
+        o.status = status
+        self._s.flush()
         return _to_fatura(o)
 
 

@@ -42,6 +42,9 @@ class FaturaRepository(Protocol):
     def marcar_paga(
         self, fatura_id: uuid.UUID, idempotency_key: str, now: dt.datetime
     ) -> Fatura | None: ...
+    def atualizar_status(
+        self, fatura_id: uuid.UUID, status: str, now: dt.datetime
+    ) -> Fatura | None: ...
 
 
 @runtime_checkable

@@ -162,6 +162,13 @@ export const api = {
   listInvoices: (ucId: string) =>
     request<Invoice[]>(`/units/${ucId}/invoices?limit=24`),
 
+  // SPEC-011: operador ajusta o status da fatura (em_aberto/vencida).
+  updateInvoiceStatus: (faturaId: string, status: "em_aberto" | "vencida") =>
+    request<Invoice>(`/invoices/${faturaId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+
   getOutage: (bairro: string) =>
     request<OutageResult>(`/outages?bairro=${encodeURIComponent(bairro)}`),
 

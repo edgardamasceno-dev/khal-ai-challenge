@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<style>
+  @page { size: A4; margin: 10mm 9mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 8.2pt;
+         color: #1a2230; margin: 0; }
+  .sheet { width: 100%; }
+  /* faixa topo */
+  .top { display: flex; justify-content: space-between; align-items: stretch;
+         border: 1.5px solid #0a4d68; border-radius: 6px; overflow: hidden; }
+  .brand { background: linear-gradient(135deg,#0a4d68,#157a99); color: #fff;
+           padding: 7px 11px; width: 58%; }
+  .brand .logo { display: flex; align-items: center; gap: 8px; }
+  .bolt { width: 26px; height: 26px; border-radius: 50%; background: #ffd34d;
+          color:#0a4d68; font-size: 17pt; line-height: 26px; text-align:center; font-weight:800; }
+  .brand h1 { margin: 0; font-size: 12.5pt; letter-spacing: .3px; }
+  .brand small { opacity: .9; font-size: 6.8pt; }
+  .brand .doc { margin-top: 5px; font-size: 7pt; opacity: .92; }
+  .invtag { width: 42%; padding: 7px 11px; text-align: right; }
+  .invtag .t { font-size: 7pt; color:#5b6b7b; text-transform: uppercase; letter-spacing:.5px;}
+  .invtag .v { font-size: 11pt; font-weight: 800; color:#0a4d68; }
+  .invtag .mes { font-size: 14pt; font-weight: 800; }
+  /* grid principal */
+  .row { display: flex; gap: 7px; margin-top: 7px; }
+  .card { border: 1px solid #c9d4de; border-radius: 6px; padding: 7px 9px; }
+  .card h3 { margin: 0 0 4px; font-size: 6.8pt; color:#0a4d68; text-transform: uppercase;
+             letter-spacing: .6px; border-bottom: 1px solid #e4eaf0; padding-bottom: 3px; }
+  .kv { display:flex; justify-content: space-between; padding: 1.2px 0; }
+  .kv b { font-weight: 700; }
+  .muted { color:#5b6b7b; }
+  /* destaque total */
+  .total { display:flex; justify-content: space-between; align-items: center;
+           background:#0a4d68; color:#fff; border-radius: 6px; padding: 9px 12px; margin-top:7px; }
+  .total .lbl { font-size: 8pt; text-transform: uppercase; letter-spacing:.5px; opacity:.9; }
+  .total .due { text-align: right; }
+  .total .amt { font-size: 18pt; font-weight: 800; }
+  .badge { display:inline-block; padding: 2px 8px; border-radius: 10px; font-size:7pt;
+           font-weight:700; }
+  .b-aberto { background:#fff3cd; color:#8a6d00; }
+  .b-vencida { background:#f8d7da; color:#a01b2b; }
+  .b-paga { background:#d4edda; color:#1c6b2e; }
+  /* tabela tarifa */
+  table { width:100%; border-collapse: collapse; }
+  .tar th, .tar td { padding: 3px 6px; font-size: 7.4pt; }
+  .tar thead th { background:#eef3f7; color:#0a4d68; text-align:left; border-bottom:1px solid #c9d4de;}
+  .tar tbody tr:nth-child(even){ background:#f7fafc; }
+  .tar td.r, .tar th.r { text-align: right; }
+  .tar tfoot td { font-weight:800; border-top: 1.5px solid #0a4d68; }
+  /* historico barras */
+  .hist { display:flex; align-items: flex-end; gap: 3px; height: 46px; padding-top:4px; }
+  .hist .bar { flex:1; background: linear-gradient(#157a99,#9fd4e6); border-radius: 2px 2px 0 0;
+               position: relative; }
+  .hist .bar span { position:absolute; top:-10px; left:0; right:0; text-align:center;
+                    font-size:5.4pt; color:#5b6b7b; }
+  .hist .bar small { position:absolute; bottom:-11px; left:0; right:0; text-align:center;
+                     font-size:5.4pt; color:#8a98a8; }
+  .bandeira-chip { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:middle; }
+  /* pagamento */
+  .pay { display:flex; gap:7px; margin-top:7px; }
+  .pix { width: 38%; text-align:center; }
+  .pix img { width: 96px; height: 96px; }
+  .pix .cc { font-family: monospace; font-size:5.4pt; word-break: break-all; color:#46566a;
+             background:#f3f6f9; border:1px dashed #c9d4de; border-radius:4px; padding:4px; margin-top:3px;}
+  .boleto { width: 62%; }
+  .barcode img { width: 100%; height: 38px; }
+  .linha { font-family: monospace; font-size: 8.2pt; letter-spacing:.3px; margin-top:5px;
+           text-align:center; font-weight:700; }
+  .clause { margin-top: 6px; font-size: 6.4pt; color:#5b6b7b; line-height: 1.35; }
+  .wm { position: fixed; top: 42%; left: 0; right: 0; text-align:center;
+        font-size: 60pt; font-weight: 800; opacity: .06; transform: rotate(-18deg);
+        color: #0a4d68; letter-spacing: 6px; }
+  .foot { margin-top:6px; font-size:6pt; color:#8a98a8; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wm">{{ status_wm }}</div>
+<div class="sheet">
+
+  <div class="top">
+    <div class="brand">
+      <div class="logo">
+        <div class="bolt">⚡</div>
+        <div><h1>Luz do Vale</h1><small>Distribuidora de Energia S.A.</small></div>
+      </div>
+      <div class="doc">CNPJ 12.345.678/0001-90 · ANEEL · Ouvidoria 0800 555 0199</div>
+    </div>
+    <div class="invtag">
+      <div class="t">Conta de Energia Elétrica</div>
+      <div class="mes">{{ mes_extenso }}</div>
+      <div class="v">Nº {{ numero_fatura }}</div>
+      <span class="badge {{ status_class }}">{{ status_label }}</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card" style="width:58%">
+      <h3>Cliente / Unidade Consumidora</h3>
+      <div class="kv"><span class="muted">Nome</span><b>{{ nome }}</b></div>
+      <div class="kv"><span class="muted">CPF</span><b>{{ cpf_mask }}</b></div>
+      <div class="kv"><span class="muted">Endereço</span><b>{{ endereco }}</b></div>
+      <div class="kv"><span class="muted">Bairro / Cidade</span><b>{{ bairro }} · {{ cidade }}/{{ uf }}</b></div>
+      <div class="kv"><span class="muted">Unidade Consumidora</span><b>{{ numero_uc }}</b></div>
+      <div class="kv"><span class="muted">Classe / Subgrupo</span><b>{{ classe }} · {{ subgrupo }}</b></div>
+    </div>
+    <div class="card" style="width:42%">
+      <h3>Leitura e Faturamento</h3>
+      <div class="kv"><span class="muted">Mês de referência</span><b>{{ mes_ref }}</b></div>
+      <div class="kv"><span class="muted">Emissão</span><b>{{ emissao }}</b></div>
+      <div class="kv"><span class="muted">Vencimento</span><b>{{ vencimento }}</b></div>
+      <div class="kv"><span class="muted">Consumo no mês</span><b>{{ consumo }} kWh</b></div>
+      <div class="kv"><span class="muted">Bandeira tarifária</span>
+        <b><span class="bandeira-chip" style="background:{{ bandeira_cor }}"></span> {{ bandeira_label }}</b></div>
+      <div class="kv"><span class="muted">Média diária</span><b>{{ media_dia }} kWh/dia</b></div>
+    </div>
+  </div>
+
+  <div class="total">
+    <div><div class="lbl">Valor a pagar</div>
+      <div style="font-size:6.6pt;opacity:.85">{{ status_help }}</div></div>
+    <div class="due"><div class="amt">R$ {{ total }}</div>
+      <div style="font-size:7pt;opacity:.9">vencimento {{ vencimento }}</div></div>
+  </div>
+
+  <div class="row">
+    <div class="card" style="width:55%">
+      <h3>Composição da fatura</h3>
+      <table class="tar">
+        <thead><tr><th>Item</th><th class="r">Quant.</th><th class="r">Tarifa</th><th class="r">Valor (R$)</th></tr></thead>
+        <tbody>
+          {% for it in itens %}
+          <tr><td>{{ it.desc }}</td><td class="r">{{ it.qtd }}</td><td class="r">{{ it.tarifa }}</td><td class="r">{{ it.valor }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr><td colspan="3">TOTAL</td><td class="r">R$ {{ total }}</td></tr></tfoot>
+      </table>
+    </div>
+    <div class="card" style="width:45%">
+      <h3>Histórico de consumo (kWh)</h3>
+      <div class="hist">
+        {% for h in historico %}
+        <div class="bar" style="height:{{ h.pct }}%"><span>{{ h.kwh }}</span><small>{{ h.mes }}</small></div>
+        {% endfor %}
+      </div>
+      <div style="height:12px"></div>
+      <div class="kv muted" style="font-size:6.6pt"><span>Média 12m</span><b>{{ media_12m }} kWh</b></div>
+      <div class="kv muted" style="font-size:6.6pt"><span>Mesmo mês ano anterior</span><b>{{ consumo_ano_ant }} kWh</b></div>
+    </div>
+  </div>
+
+  <div class="pay">
+    <div class="card pix">
+      <h3>Pague com PIX</h3>
+      <img src="data:image/png;base64,{{ qr_b64 }}" alt="PIX"/>
+      <div style="font-size:6.4pt;margin-top:2px" class="muted">Aponte a câmera ou copie o código</div>
+      <div class="cc">{{ pix_cc }}</div>
+    </div>
+    <div class="card boleto">
+      <h3>Boleto bancário</h3>
+      <div class="barcode"><img src="data:image/png;base64,{{ barcode_b64 }}" alt="cód. barras"/></div>
+      <div class="linha">{{ linha_digitavel }}</div>
+      <div class="clause">
+        <b>Pagamento após o vencimento:</b> multa de 2% sobre o valor + juros de mora de 1% ao mês
+        (0,033%/dia) + atualização monetária. {{ juros_info }}
+        A falta de pagamento poderá acarretar a <b>suspensão do fornecimento</b> mediante aviso prévio,
+        nos termos da Resolução ANEEL nº 1.000/2021.
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">Documento simulado para fins de demonstração — Luz do Vale (fictícia). Não possui validade fiscal.</div>
+</div>
+</body>
+</html>

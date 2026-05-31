@@ -4,7 +4,7 @@ name: khal-ai-challenge
 #   1. database (schema) + seed (seeder Python por personas, SPEC-006/ADR-0008)
 #   2. backend (FastAPI) + gateway (nginx, por path /api) (SPEC-001)
 #   3. frontend (console React/Shadcn, gateway roteia "/") (SPEC-002)
-#   4. mcp-server (ferramentas do agente, gateway roteia "/mcp") (SPEC-003)
+#   4. mcp-server (gateway "/mcp", SPEC-003) + minio (faturas PDF, "/files", SPEC-008)
 # `docker compose up -d --build` -> console em /, API em /api, MCP em /mcp.
 # Personas via SEED_PERSONAS no .env. Re-seed do zero: `docker compose down -v && up`.
 
@@ -45,17 +45,41 @@ services:
       database:
         condition: service_healthy
 
+  # Object storage das faturas (PDF) — ADR-0009 / SPEC-008.
+  minio:
+    image: minio/minio:latest
+    container_name: khal-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
   backend:
     build: .
     container_name: khal-backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-khal}:${POSTGRES_PASSWORD:-khal_local_dev}@database:5432/${POSTGRES_DB:-khal}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-faturas}
+      FILES_PUBLIC_BASE_URL: ${FILES_PUBLIC_BASE_URL:-http://localhost/files}
     depends_on:
       database:
         condition: service_healthy
       seed:
         condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
       interval: 5s
@@ -97,3 +121,4 @@ services:
 
 volumes:
   pgdata:
+  miniodata:

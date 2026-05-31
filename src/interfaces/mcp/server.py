@@ -40,6 +40,13 @@ def get_invoice_status(phone: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def generate_invoice_pdf(phone: str, presigned: bool = False) -> dict[str, Any]:
+    """Gera o PDF (segunda via) da fatura atual do titular e devolve a URL. Use
+    presigned=true para um link com expiracao. O PDF e enviado por midia (ADR-0003)."""
+    return _tools.generate_invoice_pdf(phone, presigned)
+
+
+@mcp.tool()
 def get_outage_by_region(bairro: str) -> dict[str, Any]:
     """Verifica se ha interrupcao de energia ativa em um bairro."""
     return _tools.get_outage_by_region(bairro)

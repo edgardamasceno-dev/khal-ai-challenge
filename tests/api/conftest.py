@@ -14,10 +14,12 @@ from fastapi.testclient import TestClient
 
 from src.application.services import (
     BillingService,
+    InvoiceDocumentService,
     MemoryService,
     OutageService,
     TicketingService,
 )
+from src.domain.billing.documento import FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
@@ -25,6 +27,7 @@ from src.domain.shared.value_objects import CPF, Dinheiro, Telefone
 from src.interfaces.rest.app import create_app
 from src.interfaces.rest.dependencies import (
     get_billing_service,
+    get_invoice_document_service,
     get_knowledge_retrieval,
     get_memory_service,
     get_outage_service,
@@ -46,6 +49,28 @@ from tests.unit.fakes import (
 ANA_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 UC_ID = uuid.UUID("aaaa0001-0000-0000-0000-000000000001")
 FAT_ID = uuid.UUID("ffff0001-0000-0000-0000-000000000001")
+
+
+class _FakeRenderer:
+    def render(self, detalhe: FaturaDetalhada) -> bytes:
+        return b"%PDF-1.7 fake"
+
+
+class _MemStorage:
+    def __init__(self) -> None:
+        self._objs: dict[str, bytes] = {}
+
+    def exists(self, key: str) -> bool:
+        return key in self._objs
+
+    def put(self, key: str, data: bytes, content_type: str) -> None:
+        self._objs[key] = data
+
+    def public_url(self, key: str) -> str:
+        return f"http://localhost/files/{key}"
+
+    def presigned_url(self, key: str, expires_seconds: int) -> str:
+        return f"http://minio/{key}?X-Expires={expires_seconds}"
 
 
 class _FakeSession:
@@ -86,6 +111,11 @@ def ctx() -> Iterator[SimpleNamespace]:
     uow = FakeUnitOfWork()
 
     billing = BillingService(titulares, FakeUnidadeRepository([uc]), FakeFaturaRepository([fatura]))
+    invoice_doc = InvoiceDocumentService(
+        FakeFaturaRepository([fatura]), FakeUnidadeRepository([uc]), titulares,
+        _FakeRenderer(), _MemStorage(),
+        clock=lambda: dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
+    )
     outage_svc = OutageService(FakeInterrupcaoRepository([outage]))
     ticketing = TicketingService(chamados, handoffs, titulares, uow)
     memory = MemoryService(memorias, uow)
@@ -95,6 +125,7 @@ def ctx() -> Iterator[SimpleNamespace]:
 
     app = create_app()
     app.dependency_overrides[get_billing_service] = lambda: billing
+    app.dependency_overrides[get_invoice_document_service] = lambda: invoice_doc
     app.dependency_overrides[get_outage_service] = lambda: outage_svc
     app.dependency_overrides[get_ticketing_service] = lambda: ticketing
     app.dependency_overrides[get_memory_service] = lambda: memory

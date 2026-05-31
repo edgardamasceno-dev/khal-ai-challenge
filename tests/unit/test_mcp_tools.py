@@ -116,3 +116,21 @@ class TestSearchKnowledgeBase:
     def test_sem_match(self) -> None:
         out = _tools().search_knowledge_base("assunto totalmente inexistente zzz")
         assert out["encontrado"] is False
+
+
+class TestGenerateInvoicePdf:
+    def test_devolve_url_estavel(self) -> None:
+        r = _tools().generate_invoice_pdf(ANA)
+        assert r["gerado"] is True
+        assert r["titular"]
+        assert r["presigned"] is False
+        assert r["url"].startswith("http://localhost/files/invoices/")
+
+    def test_presigned_com_expiracao(self) -> None:
+        r = _tools().generate_invoice_pdf(ANA, presigned=True)
+        assert r["presigned"] is True
+        assert "X-Expires" in r["url"]
+        assert r["expires_at"] is not None
+
+    def test_telefone_desconhecido(self) -> None:
+        assert _tools().generate_invoice_pdf(DESCONHECIDO)["gerado"] is False

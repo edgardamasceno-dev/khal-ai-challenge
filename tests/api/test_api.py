@@ -43,9 +43,12 @@ class TestBillingApi:
         inv = r.json()[0]
         assert inv["mes_referencia"] == "2026-05" and inv["valor_formatado"].startswith("R$ ")
 
-    def test_get_invoice_e_pdf_stub(self, ctx: SimpleNamespace) -> None:
+    def test_get_invoice_e_pdf(self, ctx: SimpleNamespace) -> None:
         assert ctx.client.get(f"/invoices/{FAT_ID}").json()["status"] == "em_aberto"
-        assert ctx.client.get(f"/invoices/{FAT_ID}/pdf").status_code == 501
+        # PDF agora gerado/persistido (SPEC-008), não mais stub 501.
+        r = ctx.client.get(f"/invoices/{FAT_ID}/pdf")
+        assert r.status_code == 200
+        assert r.json()["url"].endswith(f"invoices/{FAT_ID}.pdf")
 
 
 class TestOutageApi:

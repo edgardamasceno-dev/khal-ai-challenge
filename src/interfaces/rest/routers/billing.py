@@ -24,10 +24,20 @@ from src.interfaces.rest.schemas import (
     CustomerDTO,
     InvoiceDTO,
     InvoicePdfDTO,
+    PersonaHintDTO,
     UnitDTO,
 )
 
 router = APIRouter(tags=["billing"])
+
+
+@router.get("/personas", response_model=list[PersonaHintDTO])
+def list_personas(
+    svc: BillingService = Depends(get_billing_service),
+) -> list[PersonaHintDTO]:
+    """Personas cadastradas (atalhos da primeira tela do console). Telefone em
+    claro — é o atalho de busca do operador (SPEC-012)."""
+    return [PersonaHintDTO.from_entity(t) for t in svc.list_personas()]
 
 
 @router.get("/customers", response_model=CustomerDTO)

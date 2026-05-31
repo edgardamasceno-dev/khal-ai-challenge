@@ -22,6 +22,14 @@ class TestBillingApi:
         assert body["persona_key"] == "ana.souza"
         assert "***" in body["cpf_mascarado"]
 
+    def test_list_personas(self, ctx: SimpleNamespace) -> None:
+        r = ctx.client.get("/personas")
+        assert r.status_code == 200
+        body = r.json()
+        assert body[0]["nome"] == "Ana Souza"
+        assert body[0]["telefone"] == "555199990001"  # em claro (atalho de busca)
+        assert body[0]["persona_key"] == "ana.souza"
+
     def test_find_customer_desconhecido_404(self, ctx: SimpleNamespace) -> None:
         r = ctx.client.get("/customers", params={"phone": "559999999999"})
         assert r.status_code == 404

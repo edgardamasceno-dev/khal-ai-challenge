@@ -34,6 +34,18 @@ class CustomerDTO(BaseModel):
         )
 
 
+class PersonaHintDTO(BaseModel):
+    """Atalho da primeira tela: telefone em claro (console interno do operador)."""
+
+    nome: str
+    telefone: str
+    persona_key: str | None
+
+    @classmethod
+    def from_entity(cls, t: Titular) -> PersonaHintDTO:
+        return cls(nome=t.nome, telefone=t.telefone.value, persona_key=t.persona_key)
+
+
 class UnitDTO(BaseModel):
     id: uuid.UUID
     numero_uc: str

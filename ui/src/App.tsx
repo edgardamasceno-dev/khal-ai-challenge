@@ -13,6 +13,19 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { CustomerWorkspace } from "@/sections/CustomerWorkspace"
 import { StatusMenu } from "@/sections/StatusMenu"
 
@@ -67,12 +80,14 @@ export default function App() {
     <div className="min-h-screen bg-muted/30">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-6">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/30">
             <Zap className="size-5" />
           </div>
-          <div className="mr-auto">
-            <h1 className="text-sm leading-tight font-semibold">Luz do Vale</h1>
-            <p className="text-xs text-muted-foreground">Console do Operador</p>
+          <div className="mr-auto leading-none">
+            <p className="text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
+              Console do Operador
+            </p>
+            <h1 className="text-lg font-semibold tracking-tight">Luz do Vale</h1>
           </div>
           <StatusMenu />
         </div>
@@ -101,22 +116,33 @@ export default function App() {
         </Card>
 
         {personas.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">Personas cadastradas:</span>
-            {personas.map((p) => (
-              <Badge
-                key={p.telefone}
-                variant="secondary"
-                className="cursor-pointer font-mono text-[11px] hover:bg-secondary/70"
-                onClick={() => {
-                  setPhone(p.telefone)
-                  search(p.telefone)
-                }}
-              >
-                {p.nome.split(" ")[0]} · {p.telefone}
-              </Badge>
-            ))}
-          </div>
+          <TooltipProvider delayDuration={200}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Personas cadastradas:</span>
+              {personas.map((p) => (
+                <Tooltip key={p.telefone}>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="secondary"
+                      className="cursor-pointer font-mono text-[11px] tabular-nums hover:bg-secondary/70"
+                      onClick={() => {
+                        setPhone(p.telefone)
+                        search(p.telefone)
+                      }}
+                    >
+                      {p.nome.split(" ")[0]} · {p.telefone}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <span className="font-sans">{p.nome}</span>
+                    {p.persona_key && (
+                      <span className="font-mono text-muted-foreground">{p.persona_key}</span>
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </TooltipProvider>
         )}
 
         {customer ? (
@@ -137,17 +163,19 @@ export default function App() {
 
 function EmptyState({ hasPersonas }: { hasPersonas: boolean }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-20 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <Search className="size-6" />
-      </div>
-      <p className="text-sm font-medium">Busque um cliente para começar</p>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        Informe o telefone do titular (E.164){" "}
-        {hasPersonas
-          ? "ou clique numa das personas cadastradas acima."
-          : "para abrir o atendimento."}
-      </p>
-    </div>
+    <Empty className="rounded-xl border py-20">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" className="size-12 rounded-full">
+          <Search className="size-6" />
+        </EmptyMedia>
+        <EmptyTitle>Busque um cliente para começar</EmptyTitle>
+        <EmptyDescription>
+          Informe o telefone do titular (E.164){" "}
+          {hasPersonas
+            ? "ou clique numa das personas cadastradas acima."
+            : "para abrir o atendimento."}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   )
 }

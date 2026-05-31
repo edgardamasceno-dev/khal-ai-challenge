@@ -38,6 +38,9 @@ export function ProactiveSection({ phone }: { phone: string }) {
       const res = await api.emitProactiveEvent({ phone, tipo, subtipo, dados })
       setPreview(res.preview)
       toast.success("Notificação disparada", { description: res.subject })
+      // SPEC-010: o disparo muta o estado (fatura paga / status da interrupção).
+      // Recarrega os candidatos para refletir o banco (fatura some, toggle inverte).
+      await load()
     } catch {
       toast.error("Falha ao disparar a notificação")
     } finally {
@@ -113,40 +116,43 @@ export function ProactiveSection({ phone }: { phone: string }) {
         </CardHeader>
         <CardContent className="space-y-2">
           {outages.length === 0 && (
-            <p className="text-sm text-muted-foreground">Sem interrupção ativa no bairro.</p>
+            <p className="text-sm text-muted-foreground">Nenhum bairro associado ao cliente.</p>
           )}
-          {outages.map((o) => (
-            <div key={o.bairro} className="flex items-center justify-between gap-2">
-              <div className="text-sm">
-                <Zap className="inline size-3.5" /> {o.bairro}{" "}
-                <Badge variant="outline">{o.status}</Badge>
+          {outages.map((o) => {
+            const ativa = o.status === "ativa"
+            return (
+              <div key={o.bairro} className="flex items-center justify-between gap-2">
+                <div className="text-sm">
+                  <Zap className="inline size-3.5" /> {o.bairro}{" "}
+                  <Badge variant={ativa ? "destructive" : "outline"}>
+                    {ativa ? "interrupção ativa" : "normalizado"}
+                  </Badge>
+                </div>
+                {ativa ? (
+                  <Button
+                    size="sm"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      emit(`${o.bairro}-encerrada`, "outage", "encerrada", { bairro: o.bairro })
+                    }
+                  >
+                    <Send /> Avisar normalização
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      emit(`${o.bairro}-aberta`, "outage", "aberta", { bairro: o.bairro })
+                    }
+                  >
+                    <Send /> Avisar interrupção
+                  </Button>
+                )}
               </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    emit(`${o.bairro}-aberta`, "outage", "aberta", {
-                      bairro: o.bairro,
-                      previsao: o.previsao ?? "",
-                    })
-                  }
-                >
-                  Avisar interrupção
-                </Button>
-                <Button
-                  size="sm"
-                  disabled={busy !== null}
-                  onClick={() =>
-                    emit(`${o.bairro}-encerrada`, "outage", "encerrada", { bairro: o.bairro })
-                  }
-                >
-                  Avisar normalização
-                </Button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </CardContent>
       </Card>
     </div>

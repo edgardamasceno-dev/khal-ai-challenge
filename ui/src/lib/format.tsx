@@ -28,10 +28,18 @@ export function initials(nome: string): string {
     .join("")
 }
 
+// Tons de severidade ancorados nos tokens --status-* (fonte unica de verdade de cor).
+const STATUS_TONE = {
+  ok: "border-status-ok/30 bg-status-ok-surface text-status-ok-foreground",
+  warn: "border-status-warn/30 bg-status-warn-surface text-status-warn-foreground",
+  danger: "border-status-danger/30 bg-status-danger-surface text-status-danger-foreground",
+  info: "border-status-info/30 bg-status-info-surface text-status-info-foreground",
+} as const
+
 const INVOICE_TONE: Record<string, string> = {
-  paga: "border-emerald-600/30 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400",
-  em_aberto: "border-amber-600/30 bg-amber-600/10 text-amber-700 dark:text-amber-400",
-  vencida: "border-red-600/30 bg-red-600/10 text-red-700 dark:text-red-400",
+  paga: STATUS_TONE.ok,
+  em_aberto: STATUS_TONE.warn,
+  vencida: STATUS_TONE.danger,
 }
 
 const INVOICE_LABEL: Record<string, string> = {
@@ -49,10 +57,10 @@ export function InvoiceStatusBadge({ status }: { status: string }) {
 }
 
 const BANDEIRA_TONE: Record<string, string> = {
-  verde: "border-emerald-600/30 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400",
-  amarela: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  vermelha_p1: "border-red-600/30 bg-red-600/10 text-red-700 dark:text-red-400",
-  vermelha_p2: "border-red-700/40 bg-red-700/15 text-red-800 dark:text-red-300",
+  verde: STATUS_TONE.ok,
+  amarela: STATUS_TONE.warn,
+  vermelha_p1: STATUS_TONE.danger,
+  vermelha_p2: "border-status-danger/50 bg-status-danger/15 text-status-danger-foreground",
 }
 
 const BANDEIRA_LABEL: Record<string, string> = {
@@ -71,10 +79,10 @@ export function BandeiraBadge({ bandeira }: { bandeira: string }) {
 }
 
 const TICKET_TONE: Record<string, string> = {
-  aberto: "border-blue-600/30 bg-blue-600/10 text-blue-700 dark:text-blue-400",
-  em_andamento: "border-amber-600/30 bg-amber-600/10 text-amber-700 dark:text-amber-400",
-  resolvido: "border-emerald-600/30 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400",
-  escalado: "border-purple-600/30 bg-purple-600/10 text-purple-700 dark:text-purple-400",
+  aberto: STATUS_TONE.info,
+  em_andamento: STATUS_TONE.warn,
+  resolvido: STATUS_TONE.ok,
+  escalado: STATUS_TONE.danger,
 }
 
 export function TicketStatusBadge({ status }: { status: string }) {

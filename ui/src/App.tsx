@@ -1,22 +1,36 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Search, Zap } from "lucide-react"
-import { api, ApiError, type Contract, type Customer, type Ticket } from "@/lib/api"
+import {
+  api,
+  ApiError,
+  type Contract,
+  type Customer,
+  type Persona,
+  type Ticket,
+} from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { CustomerWorkspace } from "@/sections/CustomerWorkspace"
 import { HealthBadge } from "@/sections/HealthBadge"
 
 export default function App() {
-  const [phone, setPhone] = useState("555199990001")
+  const [phone, setPhone] = useState("")
   const [loading, setLoading] = useState(false)
   const [customer, setCustomer] = useState<Customer | null>(null)
   const [contracts, setContracts] = useState<Contract[]>([])
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [personas, setPersonas] = useState<Persona[]>([])
 
-  async function search() {
-    const value = phone.trim()
+  useEffect(() => {
+    // SPEC-012: atalhos vêm das personas realmente cadastradas (não hardcoded).
+    api.listPersonas().then(setPersonas).catch(() => setPersonas([]))
+  }, [])
+
+  async function search(value: string = phone) {
+    value = value.trim()
     if (!value) return
     setLoading(true)
     try {
@@ -76,15 +90,34 @@ export default function App() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && search()}
-                placeholder="Ex.: 555199990001"
+                placeholder="Telefone do titular (E.164)"
                 className="font-mono"
               />
             </div>
-            <Button onClick={search} disabled={loading}>
+            <Button onClick={() => search()} disabled={loading}>
               <Search /> {loading ? "Buscando…" : "Buscar"}
             </Button>
           </CardContent>
         </Card>
+
+        {personas.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Personas cadastradas:</span>
+            {personas.map((p) => (
+              <Badge
+                key={p.telefone}
+                variant="secondary"
+                className="cursor-pointer font-mono text-[11px] hover:bg-secondary/70"
+                onClick={() => {
+                  setPhone(p.telefone)
+                  search(p.telefone)
+                }}
+              >
+                {p.nome.split(" ")[0]} · {p.telefone}
+              </Badge>
+            ))}
+          </div>
+        )}
 
         {customer ? (
           <CustomerWorkspace
@@ -95,14 +128,14 @@ export default function App() {
             onTicketsChanged={refreshTickets}
           />
         ) : (
-          <EmptyState />
+          <EmptyState hasPersonas={personas.length > 0} />
         )}
       </main>
     </div>
   )
 }
 
-function EmptyState() {
+function EmptyState({ hasPersonas }: { hasPersonas: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-20 text-center">
       <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -110,8 +143,10 @@ function EmptyState() {
       </div>
       <p className="text-sm font-medium">Busque um cliente para começar</p>
       <p className="max-w-sm text-sm text-muted-foreground">
-        Informe o telefone do titular (E.164). Personas de demo: 555199990001 (Ana),
-        555199990002 (Carlos), 555199990003 (Joana).
+        Informe o telefone do titular (E.164){" "}
+        {hasPersonas
+          ? "ou clique numa das personas cadastradas acima."
+          : "para abrir o atendimento."}
       </p>
     </div>
   )

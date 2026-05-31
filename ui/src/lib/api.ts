@@ -135,6 +135,12 @@ export interface ProactiveEventResult {
   preview: string
 }
 
+export interface Persona {
+  nome: string
+  telefone: string
+  persona_key: string | null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
@@ -158,6 +164,9 @@ export const api = {
 
   listContracts: (customerId: string) =>
     request<Contract[]>(`/customers/${customerId}/contracts`),
+
+  // SPEC-012: personas cadastradas (atalhos da primeira tela).
+  listPersonas: () => request<Persona[]>("/personas"),
 
   listInvoices: (ucId: string) =>
     request<Invoice[]>(`/units/${ucId}/invoices?limit=24`),

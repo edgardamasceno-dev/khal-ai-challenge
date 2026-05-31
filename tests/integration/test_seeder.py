@@ -7,7 +7,13 @@ import datetime as dt
 from sqlalchemy import func, select
 
 from src.application.persona_registry import carregar_personas
-from src.infrastructure.orm import FaturaORM, InterrupcaoORM, LeituraORM, TitularORM
+from src.infrastructure.orm import (
+    FaturaORM,
+    InterrupcaoORM,
+    LeituraORM,
+    TitularORM,
+    UnidadeORM,
+)
 from src.infrastructure.seed import seed_personas
 
 FIXED_NOW = dt.datetime(2026, 5, 30, 12, tzinfo=dt.UTC)
@@ -62,6 +68,24 @@ def test_seed_varias_personas(session) -> None:
     assert _count(session, TitularORM) >= 3
     total_ucs = sum(perfil.n_ucs for _, perfil in personas)
     assert rep.faturas == 6 * total_ucs
+
+
+def test_seed_multi_uc_cria_varias_unidades_distintas(session) -> None:
+    # 5581988880001 deriva 4 UCs (comercial). Seed cria 4 UCs com numero_uc único (SPEC-013).
+    personas = carregar_personas("Multi:5581988880001", 42)
+    _, perfil = personas[0]
+    assert perfil.n_ucs == 4
+    rep = seed_personas(session, personas, history_months=6, now=FIXED_NOW)
+    session.flush()
+    assert rep.unidades == 4
+    titular = session.scalar(
+        select(TitularORM).where(TitularORM.telefone_principal == "5581988880001")
+    )
+    numeros = session.scalars(
+        select(UnidadeORM.numero_uc).where(UnidadeORM.titular_id == titular.id)
+    ).all()
+    assert len(numeros) == 4 and len(set(numeros)) == 4  # distintos
+    assert rep.faturas == 6 * 4
 
 
 def test_seed_telefone_resolve_titular(session) -> None:

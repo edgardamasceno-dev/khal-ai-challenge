@@ -30,7 +30,7 @@ class PerfilPersona:
     uf: str
     classe: str  # residencial | comercial | rural
     subgrupo: str  # B1 | B2 | B3
-    n_ucs: int  # 1..2
+    n_ucs: int  # 1..4
     base_kwh: tuple[int, ...]  # consumo base por UC (len == n_ucs)
     cenario_fatura: str  # CENARIOS_FATURA
     outage_ativa: bool  # interrupcao nao programada ativa no bairro
@@ -39,5 +39,7 @@ class PerfilPersona:
     def __post_init__(self) -> None:
         if self.cenario_fatura not in CENARIOS_FATURA:
             raise ValueError(f"cenario_fatura invalido: {self.cenario_fatura!r}")
+        if not 1 <= self.n_ucs <= 4:
+            raise ValueError(f"n_ucs deve estar em 1..4: {self.n_ucs}")
         if len(self.base_kwh) != self.n_ucs:
             raise ValueError("base_kwh deve ter um valor por UC (len == n_ucs)")

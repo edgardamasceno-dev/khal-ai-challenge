@@ -34,10 +34,30 @@ def test_cpf_gerado_tem_dv_valido() -> None:
 def test_invariantes_do_perfil() -> None:
     p = perfil_de(EDGAR, SEED)
     assert p.cenario_fatura in CENARIOS_FATURA
-    assert p.n_ucs in (1, 2)
+    assert 1 <= p.n_ucs <= 4
     assert len(p.base_kwh) == p.n_ucs
     assert all(k > 0 for k in p.base_kwh)
     assert p.classe in ("residencial", "comercial", "rural")
+
+
+def test_n_ucs_de_1_a_4_cobre_a_faixa() -> None:
+    # Numa amostra determinística, a distribuição deve usar os 4 valores (1..4).
+    vistos = {perfil_de(f"55119{i:07d}", SEED).n_ucs for i in range(200)}
+    assert vistos == {1, 2, 3, 4}
+
+
+def test_cenarios_canonicos_preservados() -> None:
+    # A derivação de n_ucs (stream dedicado) NÃO desloca cenário/outage/corte
+    # das personas residenciais/rurais existentes (regressão SPEC-013).
+    esperado = {
+        "555199990001": ("uma_vencida", False, False),  # Ana
+        "555199990002": ("uma_aberta", False, False),  # Carlos
+        "555199990003": ("uma_vencida", False, False),  # Joana
+        EDGAR: ("em_dia", False, False),
+    }
+    for phone, (cenario, outage, corte) in esperado.items():
+        p = perfil_de(phone, SEED)
+        assert (p.cenario_fatura, p.outage_ativa, p.corte_religacao) == (cenario, outage, corte)
 
 
 def test_perfil_rico_garante_cenario_demonstravel() -> None:

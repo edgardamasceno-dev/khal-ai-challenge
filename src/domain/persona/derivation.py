@@ -33,6 +33,14 @@ _CLASSE_PARAMS = {
     "rural": ("B2", (150, 360)),
 }
 
+# classe -> pesos de n_ucs em (1, 2, 3, 4). Comercial tende a mais unidades
+# (SPEC-013); 1 segue sendo o mais comum em residencial/rural.
+_UC_WEIGHTS = {
+    "residencial": (5, 3, 2, 1),
+    "comercial": (1, 3, 3, 3),
+    "rural": (6, 2, 1, 1),
+}
+
 
 def _rng(telefone: str, seed: int) -> random.Random:
     """RNG determinístico semeado pelo SHA-256 de `seed:telefone`."""
@@ -71,8 +79,13 @@ def perfil_de(telefone: str, seed: int, *, rico: bool = False) -> PerfilPersona:
     else:
         bairro, cidade, uf = _LOCAIS[rng.randrange(len(_LOCAIS))]
 
-    n_ucs = 2 if (classe == "comercial" and rng.random() < 0.6) else 1
-    base_kwh = tuple(rng.randint(kwh_lo, kwh_hi) for _ in range(n_ucs))
+    # Consumo da UC primária vem do RNG principal (preserva a sequência). n_ucs (1..4)
+    # e os consumos das UCs extras vêm de um stream dedicado, para não deslocar
+    # cenario_fatura/outage/corte das personas existentes (SPEC-013).
+    base_uc0 = rng.randint(kwh_lo, kwh_hi)
+    rng_ucs = _rng(f"{telefone}:ucs", seed)
+    n_ucs = rng_ucs.choices((1, 2, 3, 4), weights=_UC_WEIGHTS[classe], k=1)[0]
+    base_kwh = (base_uc0, *(rng_ucs.randint(kwh_lo, kwh_hi) for _ in range(n_ucs - 1)))
 
     cenario_fatura = rng.choices(
         ("em_dia", "uma_aberta", "uma_vencida"), weights=(3, 4, 3), k=1

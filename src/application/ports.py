@@ -7,6 +7,7 @@ from __future__ import annotations
 import uuid
 from typing import Protocol, runtime_checkable
 
+from src.domain.billing.documento import FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
 from src.domain.knowledge.entities import ResultadoKB
@@ -37,6 +38,23 @@ class FaturaRepository(Protocol):
         self, uc_id: uuid.UUID, status: str | None, limit: int
     ) -> list[Fatura]: ...
     def get(self, fatura_id: uuid.UUID) -> Fatura | None: ...
+
+
+@runtime_checkable
+class InvoicePdfRenderer(Protocol):
+    """Renderiza a fatura detalhada em PDF (A4). Adapter: WeasyPrint."""
+
+    def render(self, detalhe: FaturaDetalhada) -> bytes: ...
+
+
+@runtime_checkable
+class ObjectStorage(Protocol):
+    """Storage de objetos (S3-compatível). Adapter: MinIO."""
+
+    def exists(self, key: str) -> bool: ...
+    def put(self, key: str, data: bytes, content_type: str) -> None: ...
+    def public_url(self, key: str) -> str: ...
+    def presigned_url(self, key: str, expires_seconds: int) -> str: ...
 
 
 @runtime_checkable

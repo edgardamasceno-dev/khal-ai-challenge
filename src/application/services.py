@@ -13,11 +13,14 @@ from src.application.ports import (
     FaturaRepository,
     HandoffRepository,
     InterrupcaoRepository,
+    InvoicePdfRenderer,
     MemoriaRepository,
+    ObjectStorage,
     TitularRepository,
     UnidadeRepository,
     UnitOfWork,
 )
+from src.domain.billing.documento import DocumentoFatura, FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
 from src.domain.outage.entities import Interrupcao
@@ -77,6 +80,70 @@ class BillingService:
         if fatura is None:
             raise NotFoundError("Fatura nao encontrada")
         return fatura
+
+
+class InvoiceDocumentService:
+    """generate_invoice_pdf: render realista + persistência (MinIO) idempotente.
+
+    Chave determinística `invoices/{id}.pdf`; **não** re-renderiza se já existe.
+    Pré-assinado regenera só o link (TTL); o PDF permanece (ADR-0009).
+    """
+
+    def __init__(
+        self,
+        faturas: FaturaRepository,
+        unidades: UnidadeRepository,
+        titulares: TitularRepository,
+        renderer: InvoicePdfRenderer,
+        storage: ObjectStorage,
+        clock: Clock | None = None,
+    ) -> None:
+        self._faturas = faturas
+        self._unidades = unidades
+        self._titulares = titulares
+        self._renderer = renderer
+        self._storage = storage
+        self._clock: Clock = clock or _utcnow
+
+    def _detalhar(self, fatura_id: uuid.UUID) -> FaturaDetalhada:
+        fatura = self._faturas.get(fatura_id)
+        if fatura is None:
+            raise NotFoundError("Fatura nao encontrada")
+        unidade = self._unidades.get(fatura.uc_id)
+        if unidade is None:
+            raise NotFoundError("Unidade consumidora nao encontrada")
+        titular = self._titulares.get(unidade.titular_id)
+        if titular is None:
+            raise NotFoundError("Titular nao encontrado")
+        historico = sorted(
+            (f.mes_referencia, f.consumo_kwh)
+            for f in self._faturas.list_for_unidade(unidade.id, None, 12)
+        )
+        return FaturaDetalhada(
+            titular=titular, unidade=unidade, fatura=fatura,
+            historico=historico, emitida_em=self._clock().date(),
+        )
+
+    @staticmethod
+    def _key(fatura_id: uuid.UUID) -> str:
+        return f"invoices/{fatura_id}.pdf"
+
+    def obter_ou_gerar(
+        self, fatura_id: uuid.UUID, presign: bool = False, expires: int = 3600
+    ) -> DocumentoFatura:
+        key = self._key(fatura_id)
+        gerou = False
+        if not self._storage.exists(key):
+            pdf = self._renderer.render(self._detalhar(fatura_id))  # valida existência
+            self._storage.put(key, pdf, "application/pdf")
+            gerou = True
+        if presign:
+            url = self._storage.presigned_url(key, expires)
+            expira = self._clock() + dt.timedelta(seconds=expires)
+        else:
+            url = self._storage.public_url(key)
+            expira = None
+        return DocumentoFatura(url=url, presigned=presign, expires_at=expira, gerado_agora=gerou)
 
 
 class OutageService:

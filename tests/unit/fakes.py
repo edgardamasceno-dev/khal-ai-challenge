@@ -9,7 +9,7 @@ import datetime as dt
 import uuid
 
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
-from src.domain.conversation.entities import MemoriaConversa
+from src.domain.conversation.entities import MemoriaConversa, MensagemChat
 from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.ticketing.entities import Chamado, Handoff
@@ -26,6 +26,10 @@ class FakeTitularRepository:
 
     def find_by_phone(self, telefone: str) -> Titular | None:
         return next((t for t in self._by_id.values() if t.telefone.value == telefone), None)
+
+    def find_by_phone_em(self, telefones: list[str]) -> Titular | None:
+        alvo = set(telefones)
+        return next((t for t in self._by_id.values() if t.telefone.value in alvo), None)
 
     def get(self, titular_id: uuid.UUID) -> Titular | None:
         return self._by_id.get(titular_id)
@@ -151,6 +155,69 @@ class FakeHandoffRepository:
     def add(self, handoff: Handoff) -> Handoff:
         self.items.append(handoff)
         return handoff
+
+    def list_pendentes(self) -> list[Handoff]:
+        return [h for h in self.items if h.status == "pendente"]
+
+    def get(self, handoff_id: uuid.UUID) -> Handoff | None:
+        return next((h for h in self.items if h.id == handoff_id), None)
+
+    def set_status(
+        self, handoff_id: uuid.UUID, status: str, operador: str | None
+    ) -> Handoff | None:
+        for idx, h in enumerate(self.items):
+            if h.id == handoff_id:
+                h = dataclasses.replace(h, status=status, operador=operador)
+                self.items[idx] = h
+                return h
+        return None
+
+
+class FakeChannelControl:
+    """Registra pausas/retomadas e guarda o estado pausado (SPEC-016/018)."""
+
+    def __init__(self) -> None:
+        self.pausados: list[str] = []
+        self.retomados: list[str] = []
+        self.pausado = False
+
+    def pausar_agente(self, remetente: str) -> bool:
+        self.pausados.append(remetente)
+        self.pausado = True
+        return True
+
+    def retomar_agente(self, remetente: str) -> bool:
+        self.retomados.append(remetente)
+        self.pausado = False
+        return True
+
+    def esta_pausado(self, remetente: str) -> bool:
+        return self.pausado
+
+
+class FakeChatTranscript:
+    def __init__(self, itens: list[MensagemChat] | None = None, tem_mais: bool = False) -> None:
+        self._itens = list(itens or [])
+        self._tem_mais = tem_mais
+
+    def mensagens(
+        self, remetente: str, limit: int, cursor: str | None
+    ) -> tuple[list[MensagemChat], str | None, bool]:
+        return self._itens[:limit], ("cur" if self._tem_mais else None), self._tem_mais
+
+
+class FakeOmniSender:
+    def __init__(self) -> None:
+        self.enviados: list[tuple[str, str]] = []
+
+    def send_text(self, chat_id: str, texto: str) -> bool:
+        self.enviados.append((chat_id, texto))
+        return True
+
+    def send_document(
+        self, chat_id: str, conteudo: bytes, filename: str, caption: str = ""
+    ) -> bool:
+        return True
 
 
 class FakeMemoriaRepository:

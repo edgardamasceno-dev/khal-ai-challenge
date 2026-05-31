@@ -119,18 +119,12 @@ class TestSearchKnowledgeBase:
 
 
 class TestGenerateInvoicePdf:
-    def test_devolve_url_estavel(self) -> None:
+    def test_envia_2a_via_como_anexo(self) -> None:
+        # SPEC-017: a tool envia o anexo e reporta enviado + url.
         r = _tools().generate_invoice_pdf(ANA)
-        assert r["gerado"] is True
-        assert r["titular"]
-        assert r["presigned"] is False
-        assert r["url"].startswith("http://localhost/files/invoices/")
-
-    def test_presigned_com_expiracao(self) -> None:
-        r = _tools().generate_invoice_pdf(ANA, presigned=True)
-        assert r["presigned"] is True
-        assert "X-Expires" in r["url"]
-        assert r["expires_at"] is not None
+        assert r["gerado"] is True and r["enviado"] is True
+        assert r["titular"] and r["url"]
 
     def test_telefone_desconhecido(self) -> None:
-        assert _tools().generate_invoice_pdf(DESCONHECIDO)["gerado"] is False
+        r = _tools().generate_invoice_pdf(DESCONHECIDO)
+        assert r["gerado"] is False

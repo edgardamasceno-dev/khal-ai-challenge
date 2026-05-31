@@ -132,6 +132,7 @@ class HandoffORM(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     chamado_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("chamados.id"))
+    remetente: Mapped[str | None] = mapped_column(Text)
     motivo: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, default="pendente")
     operador: Mapped[str | None] = mapped_column(Text)

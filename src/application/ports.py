@@ -10,7 +10,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from src.domain.billing.documento import FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
-from src.domain.conversation.entities import MemoriaConversa
+from src.domain.conversation.entities import MemoriaConversa, MensagemChat
 from src.domain.knowledge.entities import ResultadoKB
 from src.domain.outage.entities import Interrupcao
 from src.domain.ticketing.entities import Chamado, Handoff
@@ -24,6 +24,7 @@ class KnowledgeRetrievalPort(Protocol):
 @runtime_checkable
 class TitularRepository(Protocol):
     def find_by_phone(self, telefone: str) -> Titular | None: ...
+    def find_by_phone_em(self, telefones: list[str]) -> Titular | None: ...
     def get(self, titular_id: uuid.UUID) -> Titular | None: ...
     def list_all(self) -> list[Titular]: ...
     def list_contratos(self, titular_id: uuid.UUID) -> list[Contrato]: ...
@@ -90,6 +91,11 @@ class ChamadoRepository(Protocol):
 @runtime_checkable
 class HandoffRepository(Protocol):
     def add(self, handoff: Handoff) -> Handoff: ...
+    def list_pendentes(self) -> list[Handoff]: ...
+    def get(self, handoff_id: uuid.UUID) -> Handoff | None: ...
+    def set_status(
+        self, handoff_id: uuid.UUID, status: str, operador: str | None
+    ) -> Handoff | None: ...
 
 
 @runtime_checkable
@@ -107,9 +113,12 @@ class EventBus(Protocol):
 
 @runtime_checkable
 class OmniSender(Protocol):
-    """Envia texto pelo canal (Omni REST). Best-effort no deliverable."""
+    """Envia texto e documentos pelo canal (Omni REST). Best-effort."""
 
     def send_text(self, chat_id: str, texto: str) -> bool: ...
+    def send_document(
+        self, chat_id: str, conteudo: bytes, filename: str, caption: str = ""
+    ) -> bool: ...
 
 
 @runtime_checkable
@@ -118,6 +127,31 @@ class ChannelHealthPort(Protocol):
 
     def whatsapp(self) -> str: ...
     def agente(self) -> str: ...
+
+
+@runtime_checkable
+class ChatDirectoryPort(Protocol):
+    """Resolve o telefone canônico a partir do id externo do chat (LID). Adapter: Omni."""
+
+    def resolve_canonical(self, external_id: str) -> str | None: ...
+
+
+@runtime_checkable
+class ChannelControlPort(Protocol):
+    """Controle do agente por conversa (Omni): pausar/retomar a IA. Best-effort."""
+
+    def pausar_agente(self, remetente: str) -> bool: ...
+    def retomar_agente(self, remetente: str) -> bool: ...
+    def esta_pausado(self, remetente: str) -> bool: ...
+
+
+@runtime_checkable
+class ChatTranscriptPort(Protocol):
+    """Histórico da conversa (Omni). Devolve (mensagens, próximo cursor, tem_mais)."""
+
+    def mensagens(
+        self, remetente: str, limit: int, cursor: str | None
+    ) -> tuple[list[MensagemChat], str | None, bool]: ...
 
 
 @runtime_checkable

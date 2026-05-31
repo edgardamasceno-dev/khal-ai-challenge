@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import { ChatSection } from "./ChatSection"
 import { InvoicesTable } from "./InvoicesTable"
 import { OutageSection } from "./OutageSection"
 import { ProactiveSection } from "./ProactiveSection"
@@ -101,6 +102,7 @@ export function CustomerWorkspace({ customer, contracts, tickets, phone, onTicke
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="chat">Chat</TabsTrigger>
             <TabsTrigger value="proativos">Proativos</TabsTrigger>
           </TabsList>
 
@@ -143,6 +145,10 @@ export function CustomerWorkspace({ customer, contracts, tickets, phone, onTicke
               tickets={tickets}
               onChanged={onTicketsChanged}
             />
+          </TabsContent>
+
+          <TabsContent value="chat" className="pt-2">
+            <ChatSection phone={phone} />
           </TabsContent>
 
           <TabsContent value="proativos" className="pt-2">

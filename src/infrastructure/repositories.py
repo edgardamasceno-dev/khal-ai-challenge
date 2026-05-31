@@ -74,7 +74,7 @@ def _to_chamado(o: ChamadoORM) -> Chamado:
 def _to_handoff(o: HandoffORM) -> Handoff:
     return Handoff(
         id=o.id, chamado_id=o.chamado_id, motivo=o.motivo, status=o.status,
-        operador=o.operador, criado_em=o.criado_em,
+        operador=o.operador, criado_em=o.criado_em, remetente=o.remetente,
     )
 
 
@@ -95,6 +95,15 @@ class SqlTitularRepository:
         o = self._s.execute(
             select(TitularORM).where(TitularORM.telefone_principal == telefone)
         ).scalar_one_or_none()
+        return _to_titular(o) if o else None
+
+    def find_by_phone_em(self, telefones: list[str]) -> Titular | None:
+        """Primeiro titular cujo telefone esteja em `telefones` (variantes do 9º dígito)."""
+        if not telefones:
+            return None
+        o = self._s.execute(
+            select(TitularORM).where(TitularORM.telefone_principal.in_(telefones))
+        ).scalars().first()
         return _to_titular(o) if o else None
 
     def get(self, titular_id: uuid.UUID) -> Titular | None:
@@ -280,8 +289,32 @@ class SqlHandoffRepository:
         o = HandoffORM(
             id=handoff.id, chamado_id=handoff.chamado_id, motivo=handoff.motivo,
             status=handoff.status, operador=handoff.operador, criado_em=handoff.criado_em,
+            remetente=handoff.remetente,
         )
         self._s.add(o)
+        self._s.flush()
+        return _to_handoff(o)
+
+    def list_pendentes(self) -> list[Handoff]:
+        rows = self._s.execute(
+            select(HandoffORM)
+            .where(HandoffORM.status == "pendente")
+            .order_by(HandoffORM.criado_em.desc())
+        ).scalars().all()
+        return [_to_handoff(o) for o in rows]
+
+    def get(self, handoff_id: uuid.UUID) -> Handoff | None:
+        o = self._s.get(HandoffORM, handoff_id)
+        return _to_handoff(o) if o else None
+
+    def set_status(
+        self, handoff_id: uuid.UUID, status: str, operador: str | None
+    ) -> Handoff | None:
+        o = self._s.get(HandoffORM, handoff_id)
+        if o is None:
+            return None
+        o.status = status
+        o.operador = operador
         self._s.flush()
         return _to_handoff(o)
 

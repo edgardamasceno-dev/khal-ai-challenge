@@ -74,7 +74,8 @@ class CxTools:
         return {"encontrado": True, "titular": titular["nome"], "faturas_em_aberto": abertas}
 
     def generate_invoice_pdf(self, phone: str, presigned: bool = False) -> dict[str, Any]:
-        """Gera (ou reaproveita) o PDF da fatura atual do titular e devolve a URL."""
+        """Envia a 2ª via da fatura atual ao cliente: PDF **anexo** no WhatsApp + link
+        (SPEC-017 / ADR-0003). Devolve `enviado` e a URL."""
         titular = self._api.find_customer(phone)
         if titular is None:
             return {"gerado": False, "motivo": "Telefone nao identificado."}
@@ -87,15 +88,16 @@ class CxTools:
             return {"gerado": False, "motivo": "Sem faturas para esta conta."}
         abertas = [f for f in faturas if f["status"] in ("em_aberto", "vencida")]
         alvo = max(abertas or faturas, key=lambda f: f["mes_referencia"])
-        doc = self._api.invoice_pdf(alvo["id"], presigned)
+        res = self._api.send_invoice(alvo["id"])
         return {
             "gerado": True,
+            "enviado": res.get("enviado", False),
             "titular": titular["nome"],
-            "mes_referencia": alvo["mes_referencia"],
-            "status": alvo["status"],
-            "url": doc["url"],
-            "presigned": doc["presigned"],
-            "expires_at": doc.get("expires_at"),
+            "mes_referencia": res.get("mes_referencia", alvo["mes_referencia"]),
+            "status": res.get("status", alvo["status"]),
+            "url": res["url"],
+            "presigned": res.get("presigned"),
+            "expires_at": res.get("expires_at"),
         }
 
     def get_outage_by_region(self, bairro: str) -> dict[str, Any]:
@@ -169,7 +171,11 @@ class CxTools:
         if titular is None:
             return {"ok": False, "motivo": "Telefone nao identificado."}
         res = self._api.create_handoff(
-            {"chamado_id": None, "motivo": f"[{titular['nome']}] {motivo}"}
+            {
+                "chamado_id": None,
+                "motivo": f"[{titular['nome']}] {motivo}",
+                "remetente": phone,  # LID/telefone do remetente -> pausa a IA (SPEC-016)
+            }
         )
         return {"ok": True, "status": res["status"]}
 

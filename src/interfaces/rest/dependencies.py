@@ -17,6 +17,7 @@ from src.application.services import (
     HealthService,
     InvoiceDocumentService,
     MemoryService,
+    OperatorChatService,
     OutageService,
     ProactiveService,
     TicketingService,
@@ -24,6 +25,7 @@ from src.application.services import (
 from src.config import settings
 from src.infrastructure.db import SessionLocal
 from src.infrastructure.events.nats_bus import NatsEventBus
+from src.infrastructure.events.omni_chats import HttpxOmniChats
 from src.infrastructure.events.omni_health import HttpxOmniHealth
 from src.infrastructure.events.omni_sender import HttpxOmniSender
 from src.infrastructure.knowledge import FilesystemKnowledgeRetrieval
@@ -67,12 +69,32 @@ def get_session() -> Iterator[Session]:
         session.close()
 
 
+@lru_cache(maxsize=1)
+def _chat_directory() -> HttpxOmniChats:
+    # Resolve LID -> telefone, controle (pausar/retomar) e transcript (SPEC-015/016/018).
+    return HttpxOmniChats(
+        settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+    )
+
+
+def get_operator_chat_service() -> OperatorChatService:
+    chats = _chat_directory()
+    return OperatorChatService(
+        transcript=chats,
+        control=chats,
+        sender=HttpxOmniSender(
+            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+        ),
+    )
+
+
 def get_billing_service(session: Session = Depends(get_session)) -> BillingService:
     return BillingService(
         SqlTitularRepository(session),
         SqlUnidadeRepository(session),
         SqlFaturaRepository(session),
         SqlAlchemyUnitOfWork(session),
+        directory=_chat_directory(),
     )
 
 
@@ -98,6 +120,9 @@ def get_invoice_document_service(
         titulares=SqlTitularRepository(session),
         renderer=WeasyPrintInvoiceRenderer(),
         storage=_object_storage(),
+        sender=HttpxOmniSender(
+            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+        ),
     )
 
 
@@ -111,6 +136,8 @@ def get_ticketing_service(session: Session = Depends(get_session)) -> TicketingS
         SqlHandoffRepository(session),
         SqlTitularRepository(session),
         SqlAlchemyUnitOfWork(session),
+        control=_chat_directory(),  # pausa/retoma a IA no Omni (SPEC-016)
+        directory=_chat_directory(),  # normaliza o remetente p/ casar com a aba Chat
     )
 
 

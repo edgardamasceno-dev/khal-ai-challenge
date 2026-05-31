@@ -17,6 +17,7 @@ from src.domain.shared.errors import InvariantError, NotFoundError
 from src.domain.shared.value_objects import CPF, Dinheiro, Telefone
 from tests.unit.fakes import (
     FakeChamadoRepository,
+    FakeChannelControl,
     FakeFaturaRepository,
     FakeHandoffRepository,
     FakeInterrupcaoRepository,
@@ -96,8 +97,9 @@ class TestBillingService:
         with pytest.raises(NotFoundError):
             _billing().find_customer_by_phone("551999999999")
 
-    def test_find_by_phone_invalido_422(self) -> None:
-        with pytest.raises(InvariantError):
+    def test_find_by_phone_nao_identificado_404(self) -> None:
+        # SPEC-015: identidade flexível (aceita LID); o que não resolve é 404, não 422.
+        with pytest.raises(NotFoundError):
             _billing().find_customer_by_phone("123")
 
     def test_list_contracts(self) -> None:
@@ -179,6 +181,17 @@ class TestTicketingService:
         )
         return svc, uow, chamados
 
+    def _svc_handoff(
+        self,
+    ) -> tuple[TicketingService, FakeHandoffRepository, FakeChannelControl]:
+        handoffs = FakeHandoffRepository()
+        control = FakeChannelControl()
+        svc = TicketingService(
+            FakeChamadoRepository(), handoffs, FakeTitularRepository([_ana()]),
+            FakeUnitOfWork(), control=control,
+        )
+        return svc, handoffs, control
+
     def test_open_ticket_cria(self) -> None:
         svc, uow, _ = self._svc()
         chamado, criado = svc.open_ticket(
@@ -234,6 +247,49 @@ class TestTicketingService:
         svc, uow, _ = self._svc()
         ho = svc.request_handoff(chamado_id=None, motivo="fora de escopo")
         assert ho.status == "pendente" and uow.commits == 1
+
+    def test_request_handoff_pausa_a_ia(self) -> None:
+        # SPEC-016: com remetente + canal, registra e pausa o agente no Omni.
+        svc, _, control = self._svc_handoff()
+        ho = svc.request_handoff(
+            chamado_id=None, motivo="quer atendente", remetente="87866608713902@lid"
+        )
+        # remetente é normalizado (sem @lid) para casar com a aba Chat (SPEC-018)
+        assert ho.status == "pendente" and ho.remetente == "87866608713902"
+        assert control.pausados == ["87866608713902@lid"]
+
+    def test_request_handoff_sem_remetente_nao_pausa(self) -> None:
+        svc, _, control = self._svc_handoff()
+        svc.request_handoff(chamado_id=None, motivo="x", remetente=None)
+        assert control.pausados == []
+
+    def test_list_e_resume_handoff(self) -> None:
+        svc, _, control = self._svc_handoff()
+        ho = svc.request_handoff(chamado_id=None, motivo="x", remetente="5581993112159")
+        assert [h.id for h in svc.list_handoffs()] == [ho.id]  # pendente na fila
+        resolvido = svc.resume_handoff(ho.id, operador="ana.op")
+        assert resolvido.status == "resolvido" and resolvido.operador == "ana.op"
+        assert control.retomados == ["5581993112159"]
+        assert svc.list_handoffs() == []  # saiu da fila
+
+    def test_resume_handoff_inexistente(self) -> None:
+        svc, _, _ = self._svc_handoff()
+        with pytest.raises(NotFoundError):
+            svc.resume_handoff(uuid.uuid4())
+
+    def test_resolver_handoffs_do_remetente_casa_por_telefone(self) -> None:
+        # SPEC-018: devolver pela aba Chat resolve o handoff pendente (casa pelo 9º dígito).
+        svc, handoffs, _ = self._svc_handoff()
+        svc.request_handoff(chamado_id=None, motivo="x", remetente="558193112159")  # sem 9
+        assert len(svc.list_handoffs()) == 1
+        n = svc.resolver_handoffs_do_remetente("5581993112159")  # com 9
+        assert n == 1 and svc.list_handoffs() == []
+
+    def test_resolver_handoffs_ignora_outro_cliente(self) -> None:
+        svc, _, _ = self._svc_handoff()
+        svc.request_handoff(chamado_id=None, motivo="x", remetente="558193112159")
+        assert svc.resolver_handoffs_do_remetente("550000000000") == 0
+        assert len(svc.list_handoffs()) == 1
 
 
 class TestMemoryService:

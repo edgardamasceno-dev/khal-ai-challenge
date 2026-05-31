@@ -1,7 +1,7 @@
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { Headphones, Plus } from "lucide-react"
-import { api, ApiError, type Customer, type Ticket } from "@/lib/api"
+import { BotMessageSquare, Headphones, Plus } from "lucide-react"
+import { api, ApiError, type Customer, type Handoff, type Ticket } from "@/lib/api"
 import {
   formatDateTime,
   TICKET_TYPES,
@@ -51,6 +51,8 @@ export function TicketsSection({ customer, selectedUcId, tickets, onChanged }: P
         <HandoffDialog />
         <CreateTicketDialog customer={customer} ucId={selectedUcId} onCreated={onChanged} />
       </div>
+
+      <HandoffQueue />
 
       {tickets.length === 0 ? (
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -232,5 +234,60 @@ function HandoffDialog() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Fila de atendimento humano: handoffs pendentes + devolver à IA (SPEC-016). */
+function HandoffQueue() {
+  const [items, setItems] = useState<Handoff[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    api
+      .listHandoffs()
+      .then(setItems)
+      .catch(() => setItems([]))
+  }, [])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, 15000)
+    return () => clearInterval(id)
+  }, [load])
+
+  async function resume(h: Handoff) {
+    setBusy(h.id)
+    try {
+      await api.resumeHandoff(h.id)
+      toast.success("Atendimento devolvido à IA")
+      load()
+    } catch {
+      toast.error("Não foi possível devolver à IA")
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (items.length === 0) return null
+
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5">
+      <div className="flex items-center gap-2 border-b border-amber-500/20 px-4 py-2 text-sm font-medium">
+        <Headphones className="size-4 text-amber-600" /> Atendimento humano ({items.length})
+      </div>
+      <ul className="divide-y">
+        {items.map((h) => (
+          <li key={h.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+            <div className="min-w-0">
+              <div className="truncate">{h.motivo ?? "Handoff solicitado"}</div>
+              <div className="text-xs text-muted-foreground">{formatDateTime(h.criado_em)}</div>
+            </div>
+            <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => resume(h)}>
+              <BotMessageSquare /> Devolver à IA
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

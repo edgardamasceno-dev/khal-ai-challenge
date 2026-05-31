@@ -12,7 +12,10 @@ from typing import Any
 
 from src.application.ports import (
     ChamadoRepository,
+    ChannelControlPort,
     ChannelHealthPort,
+    ChatDirectoryPort,
+    ChatTranscriptPort,
     EventBus,
     FaturaRepository,
     HandoffRepository,
@@ -27,11 +30,12 @@ from src.application.ports import (
 )
 from src.domain.billing.documento import DocumentoFatura, FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
-from src.domain.conversation.entities import MemoriaConversa
+from src.domain.conversation.entities import MemoriaConversa, MensagemChat
 from src.domain.notifications.entities import EventoCX
 from src.domain.notifications.templates import render_notificacao
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.errors import InvariantError, NotFoundError
+from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
 from src.domain.shared.value_objects import Protocolo, Telefone, TipoChamado
 from src.domain.ticketing.entities import Chamado, Handoff
 
@@ -77,6 +81,44 @@ class HealthService:
         )
 
 
+class OperatorChatService:
+    """Aba Chat do operador (SPEC-018): transcript do Omni + takeover/envio.
+
+    Assumir o controle pausa a IA (agentPaused, SPEC-016); devolver retoma.
+    """
+
+    def __init__(
+        self,
+        transcript: ChatTranscriptPort,
+        control: ChannelControlPort,
+        sender: OmniSender,
+    ) -> None:
+        self._transcript = transcript
+        self._control = control
+        self._sender = sender
+
+    def transcript(
+        self, phone: str, limit: int = 10, cursor: str | None = None
+    ) -> tuple[list[MensagemChat], str | None, bool]:
+        return self._transcript.mensagens(phone, limit, cursor)
+
+    def status(self, phone: str) -> dict[str, object]:
+        return {"pausado": self._control.esta_pausado(phone)}
+
+    def takeover(self, phone: str) -> dict[str, object]:
+        """Operador assume: pausa a IA."""
+        ok = self._control.pausar_agente(phone)
+        return {"pausado": True, "ok": ok}
+
+    def release(self, phone: str) -> dict[str, object]:
+        """Operador devolve ao agente: retoma a IA."""
+        ok = self._control.retomar_agente(phone)
+        return {"pausado": False, "ok": ok}
+
+    def send(self, phone: str, texto: str) -> dict[str, object]:
+        return {"enviado": self._sender.send_text(phone, texto)}
+
+
 class BillingService:
     """find_customer_by_phone, list_contracts, get_invoice_status."""
 
@@ -88,19 +130,31 @@ class BillingService:
         unidades: UnidadeRepository,
         faturas: FaturaRepository,
         uow: UnitOfWork | None = None,
+        directory: ChatDirectoryPort | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._titulares = titulares
         self._unidades = unidades
         self._faturas = faturas
         self._uow = uow
+        self._directory = directory
         self._clock: Clock = clock or _utcnow
 
-    def find_customer_by_phone(self, telefone: str) -> Titular:
-        normalizado = Telefone(telefone)
-        titular = self._titulares.find_by_phone(normalizado.value)
+    def find_customer_by_phone(self, identificador: str) -> Titular:
+        """Resolve o titular a partir do identificador do remetente (SPEC-015).
+
+        Aceita telefone (com/sem 9º dígito) ou LID do WhatsApp: tenta pelas
+        variantes do nono dígito; se não achar, resolve o LID -> telefone canônico
+        pelo Omni e tenta de novo. Guardrail intacto (só o titular do remetente).
+        """
+        raw = normalizar_msisdn(identificador)
+        titular = self._titulares.find_by_phone_em(variantes_nono_digito(raw))
+        if titular is None and self._directory is not None:
+            canonical = self._directory.resolve_canonical(identificador)
+            if canonical:
+                titular = self._titulares.find_by_phone_em(variantes_nono_digito(canonical))
         if titular is None:
-            raise NotFoundError(f"Nenhum titular para o telefone {normalizado.mascarado()}")
+            raise NotFoundError(f"Nenhum titular para o remetente …{raw[-4:]}")
         return titular
 
     def list_personas(self) -> list[Titular]:
@@ -178,6 +232,7 @@ class InvoiceDocumentService:
         titulares: TitularRepository,
         renderer: InvoicePdfRenderer,
         storage: ObjectStorage,
+        sender: OmniSender | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._faturas = faturas
@@ -185,6 +240,7 @@ class InvoiceDocumentService:
         self._titulares = titulares
         self._renderer = renderer
         self._storage = storage
+        self._sender = sender
         self._clock: Clock = clock or _utcnow
 
     def _detalhar(self, fatura_id: uuid.UUID) -> FaturaDetalhada:
@@ -227,6 +283,31 @@ class InvoiceDocumentService:
             expira = None
         return DocumentoFatura(url=url, presigned=presign, expires_at=expira, gerado_agora=gerou)
 
+    def enviar_2a_via(self, fatura_id: uuid.UUID, expires: int = 3600) -> dict[str, object]:
+        """Envia a 2ª via ao titular: PDF **anexo** no WhatsApp + **link** no texto
+        (ADR-0003 / SPEC-017). Destino = telefone cadastrado do dono da fatura."""
+        detalhe = self._detalhar(fatura_id)  # resolve titular dono + valida a fatura
+        doc = self.obter_ou_gerar(fatura_id, presign=True, expires=expires)
+        enviado = False
+        if self._sender is not None:
+            pdf = self._renderer.render(detalhe)
+            mes = detalhe.fatura.mes_referencia
+            telefone = detalhe.titular.telefone.value
+            caption = f"Luz do Vale — 2ª via da fatura de {mes}."
+            enviado = self._sender.send_document(
+                telefone, pdf, f"fatura-{mes}.pdf", caption
+            )
+            if enviado:
+                self._sender.send_text(telefone, f"Link da sua 2ª via: {doc.url}")
+        return {
+            "enviado": enviado,
+            "mes_referencia": detalhe.fatura.mes_referencia,
+            "status": detalhe.fatura.status,
+            "url": doc.url,
+            "presigned": doc.presigned,
+            "expires_at": doc.expires_at.isoformat() if doc.expires_at else None,
+        }
+
 
 class OutageService:
     """get_outage_by_region."""
@@ -249,12 +330,16 @@ class TicketingService:
         handoffs: HandoffRepository,
         titulares: TitularRepository,
         uow: UnitOfWork,
+        control: ChannelControlPort | None = None,
+        directory: ChatDirectoryPort | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._chamados = chamados
         self._handoffs = handoffs
         self._titulares = titulares
         self._uow = uow
+        self._control = control
+        self._directory = directory
         self._clock: Clock = clock or _utcnow
 
     def open_ticket(
@@ -311,23 +396,76 @@ class TicketingService:
         return self._chamados.list_for_titular(titular_id)
 
     def request_handoff(
-        self, *, chamado_id: uuid.UUID | None, motivo: str | None
+        self,
+        *,
+        chamado_id: uuid.UUID | None,
+        motivo: str | None,
+        remetente: str | None = None,
     ) -> Handoff:
-        handoff = Handoff(
-            id=uuid.uuid4(),
-            chamado_id=chamado_id,
-            motivo=motivo,
-            status="pendente",
-            operador=None,
-            criado_em=self._clock(),
-        )
+        """Registra o handoff e **pausa a IA** no canal (SPEC-016), p/ atendimento
+        humano. A pausa é best-effort: sem canal/remetente, só registra.
+
+        O remetente é normalizado para o telefone canônico (resolve LID via Omni),
+        para que a fila e a aba Chat casem pelo mesmo telefone."""
         try:
-            salvo = self._handoffs.add(handoff)
+            salvo = self._handoffs.add(
+                Handoff(
+                    id=uuid.uuid4(), chamado_id=chamado_id, motivo=motivo,
+                    status="pendente", operador=None, criado_em=self._clock(),
+                    remetente=self._normalizar_remetente(remetente),
+                )
+            )
             self._uow.commit()
         except Exception:
             self._uow.rollback()
             raise
+        if remetente and self._control is not None:
+            self._control.pausar_agente(remetente)
         return salvo
+
+    def _normalizar_remetente(self, remetente: str | None) -> str | None:
+        """LID/telefone -> telefone canônico (para casar com o phone da aba Chat)."""
+        if not remetente:
+            return None
+        if self._directory is not None:
+            canonical = self._directory.resolve_canonical(remetente)
+            if canonical:
+                return canonical
+        return normalizar_msisdn(remetente)
+
+    def list_handoffs(self) -> list[Handoff]:
+        """Fila de handoffs pendentes (atendimento humano em aberto)."""
+        return self._handoffs.list_pendentes()
+
+    def resolver_handoffs_do_remetente(self, phone: str) -> int:
+        """Marca como resolvidos os handoffs pendentes do cliente (casa pelo telefone,
+        tolerando o 9º dígito). Mantém a fila de Chamados consistente quando o operador
+        devolve pela aba Chat (SPEC-018)."""
+        variantes = set(variantes_nono_digito(normalizar_msisdn(phone)))
+        resolvidos = 0
+        for h in self._handoffs.list_pendentes():
+            if h.remetente and normalizar_msisdn(h.remetente) in variantes:
+                self._handoffs.set_status(h.id, "resolvido", "chat")
+                resolvidos += 1
+        if resolvidos:
+            self._uow.commit()
+        return resolvidos
+
+    def resume_handoff(self, handoff_id: uuid.UUID, operador: str | None = None) -> Handoff:
+        """Operador devolve à IA: retoma o agente no canal + marca `resolvido`."""
+        atual = self._handoffs.get(handoff_id)
+        if atual is None:
+            raise NotFoundError("Handoff nao encontrado")
+        if atual.remetente and self._control is not None:
+            self._control.retomar_agente(atual.remetente)
+        try:
+            resolvido = self._handoffs.set_status(handoff_id, "resolvido", operador)
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        assert resolvido is not None
+        return resolvido
 
 
 class MemoryService:

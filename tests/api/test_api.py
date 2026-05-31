@@ -40,9 +40,10 @@ class TestBillingApi:
         assert r.status_code == 404
         assert r.json()["error"]["code"] == "NotFoundError"
 
-    def test_find_customer_invalido_422(self, ctx: SimpleNamespace) -> None:
+    def test_find_customer_nao_resolve_404(self, ctx: SimpleNamespace) -> None:
+        # SPEC-015: identidade flexível — o que não resolve é 404 (não 422).
         r = ctx.client.get("/customers", params={"phone": "123"})
-        assert r.status_code == 422
+        assert r.status_code == 404
 
     def test_get_customer_e_contratos(self, ctx: SimpleNamespace) -> None:
         assert ctx.client.get(f"/customers/{ANA_ID}").status_code == 200
@@ -130,6 +131,21 @@ class TestTicketingApi:
     def test_handoff(self, ctx: SimpleNamespace) -> None:
         r = ctx.client.post("/handoffs", json={"motivo": "fora de escopo"})
         assert r.status_code == 201 and r.json()["status"] == "pendente"
+
+    def test_handoff_pausa_lista_e_retoma(self, ctx: SimpleNamespace) -> None:
+        # SPEC-016: POST com remetente pausa a IA; GET lista; resume retoma.
+        r = ctx.client.post(
+            "/handoffs", json={"motivo": "quer atendente", "remetente": "87866608713902@lid"}
+        )
+        hid = r.json()["id"]
+        assert ctx.control.pausados == ["87866608713902@lid"]
+        fila = ctx.client.get("/handoffs").json()
+        assert any(h["id"] == hid for h in fila)
+        resume = ctx.client.post(f"/handoffs/{hid}/resume", json={"operador": "op1"})
+        assert resume.status_code == 200 and resume.json()["status"] == "resolvido"
+        # retoma com o remetente normalizado (guardado no handoff)
+        assert ctx.control.retomados == ["87866608713902"]
+        assert ctx.client.get("/handoffs").json() == []
 
 
 class TestConversationApi:

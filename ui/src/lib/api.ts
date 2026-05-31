@@ -84,6 +84,7 @@ export interface CreateTicketResponse {
 export interface Handoff {
   id: string
   chamado_id: string | null
+  remetente: string | null
   motivo: string | null
   status: string
   operador: string | null
@@ -147,6 +148,23 @@ export interface Persona {
   persona_key: string | null
 }
 
+export interface ChatMessage {
+  id: string
+  texto: string
+  do_cliente: boolean
+  em: string
+}
+
+export interface ChatTranscript {
+  mensagens: ChatMessage[]
+  cursor: string | null
+  tem_mais: boolean
+}
+
+export interface ChatStatus {
+  pausado: boolean
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
@@ -173,6 +191,23 @@ export const api = {
 
   // SPEC-012: personas cadastradas (atalhos da primeira tela).
   listPersonas: () => request<Persona[]>("/personas"),
+
+  // SPEC-018: aba Chat do operador (transcript + takeover).
+  chatMessages: (phone: string, limit = 10, cursor?: string | null) =>
+    request<ChatTranscript>(
+      `/chats/${phone}/messages?limit=${limit}` +
+        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""),
+    ),
+  chatStatus: (phone: string) => request<ChatStatus>(`/chats/${phone}/status`),
+  chatTakeover: (phone: string) =>
+    request<ChatStatus>(`/chats/${phone}/takeover`, { method: "POST" }),
+  chatRelease: (phone: string) =>
+    request<ChatStatus>(`/chats/${phone}/release`, { method: "POST" }),
+  chatSend: (phone: string, texto: string) =>
+    request<{ enviado: boolean }>(`/chats/${phone}/send`, {
+      method: "POST",
+      body: JSON.stringify({ texto }),
+    }),
 
   listInvoices: (ucId: string) =>
     request<Invoice[]>(`/units/${ucId}/invoices?limit=24`),
@@ -205,6 +240,15 @@ export const api = {
     request<Handoff>("/handoffs", {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+
+  // SPEC-016: fila de atendimento humano (pendentes) + devolver à IA.
+  listHandoffs: () => request<Handoff[]>("/handoffs"),
+
+  resumeHandoff: (id: string) =>
+    request<Handoff>(`/handoffs/${id}/resume`, {
+      method: "POST",
+      body: JSON.stringify({ operador: "console" }),
     }),
 
   // Notificações proativas (SPEC-009).

@@ -12,6 +12,7 @@ from typing import Any
 
 from src.application.ports import (
     ChamadoRepository,
+    ChannelControlPort,
     ChannelHealthPort,
     ChatDirectoryPort,
     EventBus,
@@ -263,12 +264,14 @@ class TicketingService:
         handoffs: HandoffRepository,
         titulares: TitularRepository,
         uow: UnitOfWork,
+        control: ChannelControlPort | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._chamados = chamados
         self._handoffs = handoffs
         self._titulares = titulares
         self._uow = uow
+        self._control = control
         self._clock: Clock = clock or _utcnow
 
     def open_ticket(
@@ -325,8 +328,14 @@ class TicketingService:
         return self._chamados.list_for_titular(titular_id)
 
     def request_handoff(
-        self, *, chamado_id: uuid.UUID | None, motivo: str | None
+        self,
+        *,
+        chamado_id: uuid.UUID | None,
+        motivo: str | None,
+        remetente: str | None = None,
     ) -> Handoff:
+        """Registra o handoff e **pausa a IA** no canal (SPEC-016), p/ atendimento
+        humano. A pausa é best-effort: sem canal/remetente, só registra."""
         handoff = Handoff(
             id=uuid.uuid4(),
             chamado_id=chamado_id,
@@ -334,6 +343,7 @@ class TicketingService:
             status="pendente",
             operador=None,
             criado_em=self._clock(),
+            remetente=remetente,
         )
         try:
             salvo = self._handoffs.add(handoff)
@@ -341,7 +351,29 @@ class TicketingService:
         except Exception:
             self._uow.rollback()
             raise
+        if remetente and self._control is not None:
+            self._control.pausar_agente(remetente)
         return salvo
+
+    def list_handoffs(self) -> list[Handoff]:
+        """Fila de handoffs pendentes (atendimento humano em aberto)."""
+        return self._handoffs.list_pendentes()
+
+    def resume_handoff(self, handoff_id: uuid.UUID, operador: str | None = None) -> Handoff:
+        """Operador devolve à IA: retoma o agente no canal + marca `resolvido`."""
+        atual = self._handoffs.get(handoff_id)
+        if atual is None:
+            raise NotFoundError("Handoff nao encontrado")
+        if atual.remetente and self._control is not None:
+            self._control.retomar_agente(atual.remetente)
+        try:
+            resolvido = self._handoffs.set_status(handoff_id, "resolvido", operador)
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        assert resolvido is not None
+        return resolvido
 
 
 class MemoryService:

@@ -15,6 +15,7 @@ from src.interfaces.rest.schemas import (
     CreateTicketResponse,
     HandoffDTO,
     HandoffRequest,
+    ResumeHandoffRequest,
     TicketDTO,
 )
 
@@ -60,5 +61,25 @@ def request_human_handoff(
     svc: TicketingService = Depends(get_ticketing_service),
 ) -> HandoffDTO:
     return HandoffDTO.from_entity(
-        svc.request_handoff(chamado_id=body.chamado_id, motivo=body.motivo)
+        svc.request_handoff(
+            chamado_id=body.chamado_id, motivo=body.motivo, remetente=body.remetente
+        )
     )
+
+
+@router.get("/handoffs", response_model=list[HandoffDTO])
+def list_handoffs(
+    svc: TicketingService = Depends(get_ticketing_service),
+) -> list[HandoffDTO]:
+    """Fila de handoffs pendentes (atendimento humano em aberto)."""
+    return [HandoffDTO.from_entity(h) for h in svc.list_handoffs()]
+
+
+@router.post("/handoffs/{handoff_id}/resume", response_model=HandoffDTO)
+def resume_handoff(
+    handoff_id: uuid.UUID,
+    body: ResumeHandoffRequest,
+    svc: TicketingService = Depends(get_ticketing_service),
+) -> HandoffDTO:
+    """Operador devolve o atendimento à IA (retoma o agente no Omni)."""
+    return HandoffDTO.from_entity(svc.resume_handoff(handoff_id, body.operador))

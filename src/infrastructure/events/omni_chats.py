@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from src.domain.shared.phone import normalizar_msisdn
+from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
 
 logger = logging.getLogger("directory.omni")
 
@@ -49,3 +49,42 @@ class HttpxOmniChats:
             if normalizar_msisdn(chat.get("externalId", "")) == alvo:
                 return normalizar_msisdn(chat.get("canonicalId", "")) or None
         return None
+
+    # --- ChannelControlPort: pausar/retomar a IA por conversa (SPEC-016) --------- #
+
+    def _chat_id(self, remetente: str) -> str | None:
+        """Id do chat (UUID Omni) casando o remetente por externalId ou canonicalId
+        (tolerando o nono dígito no canonical)."""
+        alvo = normalizar_msisdn(remetente)
+        variantes = set(variantes_nono_digito(alvo))
+        for chat in self._fetch_chats():
+            ext = normalizar_msisdn(chat.get("externalId", ""))
+            can = normalizar_msisdn(chat.get("canonicalId", ""))
+            if ext == alvo or ext in variantes or can in variantes:
+                cid: str | None = chat.get("id")
+                return cid
+        return None
+
+    def _set_paused(self, remetente: str, paused: bool) -> bool:
+        if not self._instance_id or not remetente:
+            return False
+        try:
+            chat_id = self._chat_id(remetente)
+            if not chat_id:
+                return False
+            with httpx.Client(headers=self._headers, timeout=self._timeout) as client:
+                r = client.patch(
+                    f"{self._base}/api/v2/chats/{chat_id}",
+                    json={"settings": {"agentPaused": paused}},
+                )
+                r.raise_for_status()
+            return True
+        except Exception as exc:  # noqa: BLE001 - best-effort
+            logger.info("controle do agente indisponível (%s): %s", remetente, exc)
+            return False
+
+    def pausar_agente(self, remetente: str) -> bool:
+        return self._set_paused(remetente, True)
+
+    def retomar_agente(self, remetente: str) -> bool:
+        return self._set_paused(remetente, False)

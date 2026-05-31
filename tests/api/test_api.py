@@ -132,6 +132,20 @@ class TestTicketingApi:
         r = ctx.client.post("/handoffs", json={"motivo": "fora de escopo"})
         assert r.status_code == 201 and r.json()["status"] == "pendente"
 
+    def test_handoff_pausa_lista_e_retoma(self, ctx: SimpleNamespace) -> None:
+        # SPEC-016: POST com remetente pausa a IA; GET lista; resume retoma.
+        r = ctx.client.post(
+            "/handoffs", json={"motivo": "quer atendente", "remetente": "87866608713902@lid"}
+        )
+        hid = r.json()["id"]
+        assert ctx.control.pausados == ["87866608713902@lid"]
+        fila = ctx.client.get("/handoffs").json()
+        assert any(h["id"] == hid for h in fila)
+        resume = ctx.client.post(f"/handoffs/{hid}/resume", json={"operador": "op1"})
+        assert resume.status_code == 200 and resume.json()["status"] == "resolvido"
+        assert ctx.control.retomados == ["87866608713902@lid"]
+        assert ctx.client.get("/handoffs").json() == []
+
 
 class TestConversationApi:
     def test_memoria_put_get_upsert(self, ctx: SimpleNamespace) -> None:

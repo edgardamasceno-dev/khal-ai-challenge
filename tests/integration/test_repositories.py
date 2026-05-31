@@ -232,6 +232,21 @@ class TestTicketingRepos:
         )
         assert ho.status == "pendente"
 
+    def test_handoff_pendentes_e_set_status(self, session: Session) -> None:
+        # SPEC-016: remetente persiste; list_pendentes filtra; set_status resolve.
+        repo = SqlHandoffRepository(session)
+        agora = dt.datetime.now(dt.UTC)
+        ho = repo.add(
+            Handoff(id=uuid.uuid4(), chamado_id=None, motivo="quer atendente",
+                    status="pendente", operador=None, criado_em=agora,
+                    remetente="87866608713902@lid")
+        )
+        assert ho.remetente == "87866608713902@lid"
+        assert [h.id for h in repo.list_pendentes()] == [ho.id]
+        resolvido = repo.set_status(ho.id, "resolvido", "op1")
+        assert resolvido is not None and resolvido.status == "resolvido"
+        assert repo.list_pendentes() == []
+
 
 class TestMemoriaRepo:
     def test_upsert_nao_duplica(self, session: Session) -> None:

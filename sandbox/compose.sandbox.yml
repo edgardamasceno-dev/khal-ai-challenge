@@ -41,7 +41,11 @@ services:
     environment:
       HTTP_PROXY: http://egress-proxy:8888
       HTTPS_PROXY: http://egress-proxy:8888
-      NO_PROXY: mcp-server,localhost,127.0.0.1
+      # CDNs de mídia (mmg/*.cdn/*.fna) ficam fora do proxy: o upload do Baileys usa
+      # `fetch` com streaming, que o Bun NÃO tuneliza via CONNECT (SPEC-019/ADR-0010).
+      # INÓCUO sem internet direta (Omni tenta direto, falha, o link cobre); só habilita
+      # o anexo quando `sandbox/enable-media.sh` (opt-in) dá a rota NAT. Default = isolado.
+      NO_PROXY: mcp-server,localhost,127.0.0.1,mmg.whatsapp.net,.cdn.whatsapp.net,.fna.whatsapp.net
       # MCP interno (mcpnet) consumido pelo agente CX via Claude Code.
       MCP_URL: http://mcp-server:8000/mcp
     volumes:

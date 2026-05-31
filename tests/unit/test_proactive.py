@@ -101,11 +101,52 @@ def test_candidatos_lista_pagamento_e_outage() -> None:
     assert c["outages"] and c["outages"][0]["bairro"] == "Jardim das Flores"
 
 
-def test_candidatos_sem_outage() -> None:
+def test_candidatos_sem_outage_lista_bairro_normal() -> None:
+    # Sem interrupção ativa o bairro continua na lista (status "normal"),
+    # para dirigir o toggle "Avisar interrupção" no console (SPEC-010).
     svc, _, _, _ = _svc(com_outage=False)
-    assert svc.candidatos("5581993112159")["outages"] == []
+    outages = svc.candidatos("5581993112159")["outages"]
+    assert outages and outages[0]["status"] == "normal"  # type: ignore[index]
 
 
 def test_candidatos_telefone_desconhecido() -> None:
     svc, _, _, _ = _svc()
     assert svc.candidatos("550000000000")["encontrado"] is False
+
+
+# --- SPEC-010: o disparo também muta o estado de domínio --------------------- #
+
+
+def test_disparar_pagamento_da_baixa_na_fatura() -> None:
+    svc, bus, _, _ = _svc()
+    r = svc.disparar_por_telefone(
+        "5581993112159", "pagamento", "confirmado", {"fatura_id": str(FID)}
+    )
+    assert svc._faturas.get(FID).status == "paga"  # type: ignore[union-attr]
+    assert bus.published[0][0] == "utilitycx.pagamento.confirmado"
+    assert "publicado" in r
+
+
+def test_disparar_pagamento_idempotente() -> None:
+    svc, _, _, _ = _svc()
+    svc.disparar_por_telefone("5581993112159", "pagamento", "confirmado", {"fatura_id": str(FID)})
+    svc.disparar_por_telefone("5581993112159", "pagamento", "confirmado", {"fatura_id": str(FID)})
+    assert svc._faturas.get(FID).status == "paga"  # type: ignore[union-attr]
+
+
+def test_disparar_outage_aberta_cria_interrupcao() -> None:
+    svc, _, _, _ = _svc(com_outage=False)
+    svc.disparar_por_telefone(
+        "5581993112159", "outage", "aberta",
+        {"bairro": "Jardim das Flores", "causa": "Vendaval"},
+    )
+    inter = svc._interrupcoes.find_ativa_por_regiao("Jardim das Flores", None, None)
+    assert inter is not None and inter.status == "ativa" and inter.causa == "Vendaval"
+
+
+def test_disparar_outage_encerrada_persiste_status() -> None:
+    svc, _, _, _ = _svc(com_outage=True)
+    svc.disparar_por_telefone(
+        "5581993112159", "outage", "encerrada", {"bairro": "Jardim das Flores"}
+    )
+    assert svc._interrupcoes.find_ativa_por_regiao("Jardim das Flores", None, None) is None

@@ -40,6 +40,16 @@ def _utcnow() -> dt.datetime:
     return dt.datetime.now(dt.UTC)
 
 
+def _parse_dt(valor: object) -> dt.datetime | None:
+    """ISO 8601 -> datetime; None se ausente/ inválido (mantém best-effort)."""
+    if not isinstance(valor, str) or not valor:
+        return None
+    try:
+        return dt.datetime.fromisoformat(valor)
+    except ValueError:
+        return None
+
+
 class BillingService:
     """find_customer_by_phone, list_contracts, get_invoice_status."""
 
@@ -315,17 +325,68 @@ class ProactiveService:
     def disparar_por_telefone(
         self, phone: str, tipo: str, subtipo: str, dados: dict[str, Any]
     ) -> dict[str, object]:
-        """Resolve o titular (nome) pelo telefone, monta o evento e dispara."""
+        """Resolve o titular, **executa a ação de domínio** (muta o estado) e dispara.
+
+        A mutação (SPEC-010) roda aqui, no caso de uso do backend que tem repos + UoW:
+        pagamento dá baixa na fatura; outage abre/encerra a interrupção. Determinístico,
+        idempotente. O worker (SPEC-009) segue só notificando.
+        """
         normalizado = Telefone(phone)
         titular = self._titulares.find_by_phone(normalizado.value)
         if titular is None:
             raise NotFoundError("Telefone nao identificado")
+        self._executar_acao(titular, tipo, subtipo, dados)
         chave_dado = dados.get("fatura_id") or dados.get("mes") or dados.get("bairro") or ""
         evento = EventoCX(
             tipo=tipo, subtipo=subtipo, telefone=normalizado.value, nome=titular.nome,
             idempotency_key=f"{tipo}.{subtipo}.{normalizado.value}.{chave_dado}", dados=dados,
         )
         return self.disparar(evento)
+
+    def _regiao_do_bairro(self, titular: Titular, bairro: str) -> tuple[str, str]:
+        """Resolve (cidade, uf) do bairro a partir das UCs do titular; fallback 1ª UC."""
+        primeira: UnidadeConsumidora | None = None
+        for c in self._titulares.list_contratos(titular.id):
+            uc = c.unidade
+            primeira = primeira or uc
+            if uc.bairro and uc.bairro.casefold() == bairro.casefold():
+                return uc.cidade, uc.uf
+        return (primeira.cidade, primeira.uf) if primeira else ("", "")
+
+    def _executar_acao(
+        self, titular: Titular, tipo: str, subtipo: str, dados: dict[str, Any]
+    ) -> None:
+        """Muta o estado de domínio conforme o evento e faz commit (idempotente)."""
+        now = self._clock()
+        if (tipo, subtipo) == ("pagamento", "confirmado"):
+            fid = dados.get("fatura_id")
+            if fid:
+                fatura = self._faturas.marcar_paga(
+                    uuid.UUID(str(fid)), f"pagamento.confirmado.{fid}", now
+                )
+                if fatura is not None:
+                    dados.setdefault("mes", fatura.mes_referencia)
+                    dados.setdefault("valor", fatura.valor.formatado())
+        elif (tipo, subtipo) == ("outage", "aberta"):
+            bairro = dados.get("bairro")
+            if bairro:
+                cidade, uf = self._regiao_do_bairro(titular, bairro)
+                self._interrupcoes.abrir(
+                    bairro, cidade, uf, dados.get("causa"),
+                    _parse_dt(dados.get("previsao")), now,
+                )
+        elif (tipo, subtipo) == ("outage", "encerrada"):
+            bairro = dados.get("bairro")
+            if bairro:
+                cidade, uf = self._regiao_do_bairro(titular, bairro)
+                self._interrupcoes.encerrar(bairro, cidade, uf, now)
+        else:
+            return
+        try:
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
 
     def processar(self, evento: EventoCX) -> dict[str, object]:
         """Worker: render determinístico -> envia (Omni) -> grava na memória."""
@@ -364,13 +425,14 @@ class ProactiveService:
             if uc.bairro and uc.bairro not in bairros_vistos:
                 bairros_vistos.add(uc.bairro)
                 inter = self._interrupcoes.find_ativa_por_regiao(uc.bairro, uc.cidade, uc.uf)
-                if inter is not None:
-                    prev = inter.previsao_retorno
-                    outages.append({
-                        "bairro": uc.bairro,
-                        "previsao": prev.isoformat() if prev else None,
-                        "status": inter.status,
-                    })
+                prev = inter.previsao_retorno if inter else None
+                # Lista o bairro mesmo sem interrupção (status "normal") p/ dirigir o
+                # toggle do console: abrir quando normal, encerrar quando ativa (SPEC-010).
+                outages.append({
+                    "bairro": uc.bairro,
+                    "previsao": prev.isoformat() if prev else None,
+                    "status": inter.status if inter else "normal",
+                })
         return {
             "encontrado": True, "titular": titular.nome, "telefone": normalizado.value,
             "pagamentos": pagamentos, "outages": outages,

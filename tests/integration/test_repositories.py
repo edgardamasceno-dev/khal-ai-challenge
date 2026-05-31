@@ -11,6 +11,7 @@ from src.infrastructure.orm import (
     ContratoORM,
     FaturaORM,
     InterrupcaoORM,
+    PagamentoORM,
     TitularORM,
     UnidadeORM,
 )
@@ -93,6 +94,30 @@ class TestBillingRepos:
         assert len(faturas) == 1 and faturas[0].valor.centavos == 19000
         assert SqlFaturaRepository(session).get(FAT).status == "em_aberto"
 
+    def test_marcar_paga_persiste_status_e_pagamento(self, session: Session) -> None:
+        _seed(session)
+        repo = SqlFaturaRepository(session)
+        now = dt.datetime.now(dt.UTC)
+        fatura = repo.marcar_paga(FAT, "pagamento.confirmado.fat-1", now)
+        assert fatura is not None and fatura.status == "paga"
+        # baixa persistida + 1 pagamento criado
+        assert session.get(FaturaORM, FAT).status == "paga"
+        pagos = session.query(PagamentoORM).filter_by(fatura_id=FAT).all()
+        assert len(pagos) == 1 and pagos[0].valor_centavos == 19000
+
+    def test_marcar_paga_idempotente(self, session: Session) -> None:
+        _seed(session)
+        repo = SqlFaturaRepository(session)
+        now = dt.datetime.now(dt.UTC)
+        repo.marcar_paga(FAT, "pagamento.confirmado.fat-1", now)
+        repo.marcar_paga(FAT, "pagamento.confirmado.fat-1", now)  # 2x -> sem duplicar
+        assert session.query(PagamentoORM).filter_by(fatura_id=FAT).count() == 1
+
+    def test_marcar_paga_fatura_inexistente(self, session: Session) -> None:
+        assert SqlFaturaRepository(session).marcar_paga(
+            uuid.uuid4(), "k", dt.datetime.now(dt.UTC)
+        ) is None
+
 
 class TestOutageRepo:
     def test_find_ativa_por_regiao(self, session: Session) -> None:
@@ -100,6 +125,49 @@ class TestOutageRepo:
         repo = SqlInterrupcaoRepository(session)
         assert repo.find_ativa_por_regiao("Jardim das Flores", "Vale do Sol", "SP") is not None
         assert repo.find_ativa_por_regiao("Centro", None, None) is None
+
+    def test_abrir_cria_quando_nao_ha_ativa(self, session: Session) -> None:
+        _seed(session)  # ja ha 1 ativa em "Jardim das Flores"
+        repo = SqlInterrupcaoRepository(session)
+        now = dt.datetime.now(dt.UTC)
+        prev = now + dt.timedelta(hours=3)
+        nova = repo.abrir("Centro", "Vale do Sol", "SP", "Vendaval", prev, now)
+        assert nova.status == "ativa" and nova.causa == "Vendaval"
+        assert nova.previsao_retorno == prev
+        assert repo.find_ativa_por_regiao("Centro", "Vale do Sol", "SP") is not None
+
+    def test_abrir_idempotente_quando_ja_ativa(self, session: Session) -> None:
+        _seed(session)
+        repo = SqlInterrupcaoRepository(session)
+        now = dt.datetime.now(dt.UTC)
+        existente = repo.abrir("Jardim das Flores", "Vale do Sol", "SP", "Outra", None, now)
+        assert existente.causa == "Falha de rede"  # devolve a ativa, nao cria nova
+        ativas = (
+            session.query(InterrupcaoORM)
+            .filter_by(bairro="Jardim das Flores", status="ativa")
+            .count()
+        )
+        assert ativas == 1
+
+    def test_encerrar_persiste_status_e_timestamp(self, session: Session) -> None:
+        _seed(session)
+        repo = SqlInterrupcaoRepository(session)
+        now = dt.datetime.now(dt.UTC)
+        encerrada = repo.encerrar("Jardim das Flores", "Vale do Sol", "SP", now)
+        assert encerrada is not None and encerrada.status == "encerrada"
+        assert repo.find_ativa_por_regiao("Jardim das Flores", None, None) is None
+        orm = (
+            session.query(InterrupcaoORM)
+            .filter_by(bairro="Jardim das Flores")
+            .one()
+        )
+        assert orm.status == "encerrada" and orm.encerrada_em is not None
+
+    def test_encerrar_sem_ativa_retorna_none(self, session: Session) -> None:
+        _seed(session)
+        assert SqlInterrupcaoRepository(session).encerrar(
+            "Centro", None, None, dt.datetime.now(dt.UTC)
+        ) is None
 
 
 class TestTicketingRepos:

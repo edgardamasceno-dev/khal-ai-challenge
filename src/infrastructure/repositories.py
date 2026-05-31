@@ -24,6 +24,7 @@ from src.infrastructure.orm import (
     HandoffORM,
     InterrupcaoORM,
     MemoriaORM,
+    PagamentoORM,
     TitularORM,
     UnidadeORM,
 )
@@ -139,6 +140,23 @@ class SqlFaturaRepository:
         o = self._s.get(FaturaORM, fatura_id)
         return _to_fatura(o) if o else None
 
+    def marcar_paga(
+        self, fatura_id: uuid.UUID, idempotency_key: str, now: dt.datetime
+    ) -> Fatura | None:
+        """Da baixa: status -> 'paga' + insere pagamento (idempotente por key)."""
+        o = self._s.get(FaturaORM, fatura_id)
+        if o is None:
+            return None
+        if o.status != "paga":
+            o.status = "paga"
+            stmt = pg_insert(PagamentoORM).values(
+                id=uuid.uuid4(), fatura_id=o.id, valor_centavos=o.valor_total_centavos,
+                data_pagamento=now, meio="pix", idempotency_key=idempotency_key,
+            ).on_conflict_do_nothing(index_elements=["idempotency_key"])
+            self._s.execute(stmt)
+            self._s.flush()
+        return _to_fatura(o)
+
 
 class SqlInterrupcaoRepository:
     def __init__(self, session: Session) -> None:
@@ -157,6 +175,45 @@ class SqlInterrupcaoRepository:
             stmt = stmt.where(InterrupcaoORM.uf == uf.upper())
         o = self._s.execute(stmt.order_by(InterrupcaoORM.inicio.desc())).scalars().first()
         return _to_interrupcao(o) if o else None
+
+    def _ativa_orm(self, bairro: str, cidade: str | None, uf: str | None) -> InterrupcaoORM | None:
+        stmt = select(InterrupcaoORM).where(
+            InterrupcaoORM.status == "ativa", InterrupcaoORM.bairro.ilike(bairro)
+        )
+        if cidade:
+            stmt = stmt.where(InterrupcaoORM.cidade.ilike(cidade))
+        if uf:
+            stmt = stmt.where(InterrupcaoORM.uf == uf.upper())
+        return self._s.execute(stmt.order_by(InterrupcaoORM.inicio.desc())).scalars().first()
+
+    def abrir(
+        self, bairro: str, cidade: str, uf: str, causa: str | None,
+        previsao: dt.datetime | None, now: dt.datetime,
+    ) -> Interrupcao:
+        """Abre (ativa) uma interrupcao no bairro. Idempotente: se ja ha ativa, devolve-a."""
+        existente = self._ativa_orm(bairro, cidade, uf)
+        if existente is not None:
+            return _to_interrupcao(existente)
+        o = InterrupcaoORM(
+            bairro=bairro, cidade=cidade, uf=uf.upper(), tipo="nao_programada",
+            causa=causa or "Interrupcao registrada pelo operador", inicio=now,
+            previsao_retorno=previsao, status="ativa",
+        )
+        self._s.add(o)
+        self._s.flush()
+        return _to_interrupcao(o)
+
+    def encerrar(
+        self, bairro: str, cidade: str | None, uf: str | None, now: dt.datetime
+    ) -> Interrupcao | None:
+        """Encerra a interrupcao ativa do bairro -> status 'encerrada' + encerrada_em."""
+        o = self._ativa_orm(bairro, cidade, uf)
+        if o is None:
+            return None
+        o.status = "encerrada"
+        o.encerrada_em = now
+        self._s.flush()
+        return _to_interrupcao(o)
 
 
 class SqlChamadoRepository:

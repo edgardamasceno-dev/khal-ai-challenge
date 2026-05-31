@@ -4,6 +4,7 @@ infrastructure/. Repository pattern + Unit of Work.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Any, Protocol, runtime_checkable
 
@@ -38,6 +39,9 @@ class FaturaRepository(Protocol):
         self, uc_id: uuid.UUID, status: str | None, limit: int
     ) -> list[Fatura]: ...
     def get(self, fatura_id: uuid.UUID) -> Fatura | None: ...
+    def marcar_paga(
+        self, fatura_id: uuid.UUID, idempotency_key: str, now: dt.datetime
+    ) -> Fatura | None: ...
 
 
 @runtime_checkable
@@ -61,6 +65,13 @@ class ObjectStorage(Protocol):
 class InterrupcaoRepository(Protocol):
     def find_ativa_por_regiao(
         self, bairro: str, cidade: str | None, uf: str | None
+    ) -> Interrupcao | None: ...
+    def abrir(
+        self, bairro: str, cidade: str, uf: str, causa: str | None,
+        previsao: dt.datetime | None, now: dt.datetime,
+    ) -> Interrupcao: ...
+    def encerrar(
+        self, bairro: str, cidade: str | None, uf: str | None, now: dt.datetime
     ) -> Interrupcao | None: ...
 
 

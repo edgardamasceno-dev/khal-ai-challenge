@@ -233,6 +233,33 @@ docker exec khal-sandbox sh -c 'grep "POST /api/v2/messages/send" /tmp/omni-api.
 `get_invoice_status`/`get_outage_by_region` → `omni say` (`POST .../messages/send → 201`)
 → `omni done`. A resposta chega no WhatsApp do cliente com os dados reais do seed.
 
+### 6.6 Anexo da 2ª via (PDF) — opt-in de mídia (SPEC-019 / ADR-0010)
+
+A 2ª via sempre chega pelo **link** no texto. Para também enviar o **PDF anexo**, o upload do
+Baileys precisa subir aos CDNs (`mmg`/`*.cdn.whatsapp.net`) sem o proxy — o `fetch` do Bun não
+tuneliza upload com streaming via `CONNECT`. O `NO_PROXY` do sandbox já lista os CDNs
+(`compose.sandbox.yml`); falta só a rota direta. Opt-in (default da entrega = isolado):
+
+```bash
+bash sandbox/enable-media.sh      # conecta a bridge + reinicia a API do Omni; aguarda reconectar
+# teste E2E (titular real):
+FID=$(docker exec khal-database psql -U khal -d khal -tAc \
+  "select f.id from faturas f join unidades_consumidoras u on u.id=f.uc_id \
+   join titulares t on t.id=u.titular_id where t.telefone_principal='<seu_numero>' \
+   order by f.vencimento desc limit 1" | tr -d ' ')
+docker exec khal-backend python -c "import urllib.request; \
+  print(urllib.request.urlopen(urllib.request.Request('http://localhost:8000/invoices/$FID/send', \
+  data=b'{}', headers={'Content-Type':'application/json'}, method='POST')).read().decode())"
+# espera: "enviado_anexo": true   (send/media -> 201 em ~2-3s)
+
+bash sandbox/disable-media.sh     # restaura o isolamento (volta a só o link)
+```
+
+Sem `enable-media.sh`: `enviado_anexo: false` e a 2ª via sai só pelo **link** (fallback
+best-effort da SPEC-017) — o isolamento de rede do default (ADR-0006) fica intacto. Usa a
+`bridge` (não a `khal-wanet` do 6.0): o WSS conecta por ambas, mas o upload via Bun `fetch` só
+completa pela `bridge` (ver ADR-0010).
+
 ### Notas operacionais
 - **Auth do agente:** se o container foi **recriado** depois do `claude login`, refaça
   `docker exec -it khal-sandbox claude login` (a sessão TUI do Claude Code atrela ao

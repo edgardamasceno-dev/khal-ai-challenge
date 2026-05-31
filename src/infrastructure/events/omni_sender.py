@@ -27,7 +27,7 @@ class HttpxOmniSender:
         api_key: str = "",
         instance_id: str = "",
         timeout: float = 8.0,
-        media_timeout: float = 6.0,
+        media_timeout: float = 12.0,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._instance_id = instance_id

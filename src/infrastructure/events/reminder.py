@@ -52,9 +52,7 @@ def executar(hoje: dt.date | None = None) -> dict[str, object]:
             SqlAlchemyUnitOfWork(session),
         )
         resultado = svc.varrer(hoje or hoje_local())
-        logger.info(
-            "lembretes %s -> publicados=%s", resultado["data"], resultado["total"]
-        )
+        logger.info("lembretes %s -> publicados=%s", resultado["data"], resultado["total"])
         return resultado
     finally:
         session.close()

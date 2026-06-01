@@ -21,7 +21,11 @@ class Settings(BaseSettings):
     nats_url: str = "nats://nats:4222"
     omni_url: str = "http://omni:8882"  # REST do Omni (envio de texto); best-effort
     omni_api_key: str = ""
-    omni_instance_id: str = ""  # instância WhatsApp do Omni (sandbox)
+    # SPEC-030: o instance-id é dinâmico por pareamento — por isso NÃO se fixa no .env.
+    # Vazio (default) = o backend resolve o UUID pelo NOME estável abaixo, em runtime.
+    # Preencher só p/ forçar uma instância específica (override).
+    omni_instance_id: str = ""
+    omni_instance_name: str = "luzdovale-bot"  # nome estável p/ resolver o instance-id
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

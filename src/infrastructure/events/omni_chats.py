@@ -16,6 +16,7 @@ import httpx
 
 from src.domain.conversation.entities import MensagemChat
 from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
+from src.infrastructure.events.omni_instances import resolve_instance_id
 
 logger = logging.getLogger("directory.omni")
 
@@ -32,12 +33,28 @@ def _parse_ts(valor: object) -> dt.datetime:
 
 class HttpxOmniChats:
     def __init__(
-        self, base_url: str, api_key: str = "", instance_id: str = "", timeout: float = 3.0
+        self,
+        base_url: str,
+        api_key: str = "",
+        instance_id: str = "",
+        instance_name: str = "",
+        timeout: float = 3.0,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._instance_id = instance_id
+        self._instance_name = instance_name  # SPEC-030: resolve o id por nome se vazio
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._timeout = timeout
+
+    def _eid(self) -> str:
+        """Instance-id efetivo p/ pausar/retomar (SPEC-016): fixo ou resolvido pelo nome
+        (SPEC-030); lazy + cacheado. A resolução do LID (resolve_canonical) NÃO usa isto —
+        funciona sem instance (busca em todas as instâncias)."""
+        if not self._instance_id and self._instance_name:
+            self._instance_id = (
+                resolve_instance_id(self._base, self._headers, self._instance_name) or ""
+            )
+        return self._instance_id
 
     def _fetch_chats(self) -> list[dict[str, Any]]:
         # Com instance_id, filtra por instância (produção multi-instância). Sem ele
@@ -89,7 +106,7 @@ class HttpxOmniChats:
 
     def pausar_agente(self, remetente: str) -> bool:
         """Pausa a IA via PATCH settings.agentPaused=true."""
-        if not self._instance_id:
+        if not self._eid():
             return False
         chat = self._chat(remetente)
         if not chat or not chat.get("id"):
@@ -110,7 +127,7 @@ class HttpxOmniChats:
         """Retoma a IA via `clear-session`: despausa (agentPaused=false + agentResumedAt)
         E **reseta a sessão do agente** — sem o reset o Genie fica preso e não responde.
         Usa o `externalId` (mesmo id que o dispatcher usa para computar o sessionId)."""
-        if not self._instance_id:
+        if not self._eid():
             return False
         chat = self._chat(remetente)
         if not chat:

@@ -44,6 +44,18 @@ LID **sem** re-seed. **Sem** mudar o algoritmo da SPEC-015.
   API (rodada por `sandbox-up.sh`) lê `process.env.OMNI_API_KEY` e a usa como key primária. Backend
   e Omni passam a usar **a mesma** key → `resolve_canonical` autentica.
 
+### Instance-id resolvido por NOME (não fixar UUID no `.env`)
+O `instanceId` é um UUID **gerado a cada pareamento** — fixá-lo no `.env` é frágil (muda em todo
+setup do zero) e meia-solução: a **leitura** (`resolve_canonical`) tolera id vazio (busca em todas
+as instâncias), mas a **escrita** (envio de texto/PDF/proativo em `omni_sender.py`, e a saúde em
+`omni_health.py`, e pausar/retomar em `omni_chats.py`) **exige** o id (`OMNI_INSTANCE_ID ausente;
+notificação só na memória`). Solução: `src/infrastructure/events/omni_instances.py::resolve_instance_id`
+descobre o UUID em runtime via `GET /api/v2/instances` casando o `name` (`OMNI_INSTANCE_NAME`,
+default `luzdovale-bot`). Os adapters o chamam **lazy** (na 1ª escrita/leitura que precisa) e
+cacheiam — o pareamento ocorre **depois** do startup, então resolver na construção não serve
+(ex.: o worker). `OMNI_INSTANCE_ID` vira **opcional** (override); o `.env` fica **vazio** e nada
+precisa ser setado por setup.
+
 ### Rede / alias
 - `sandbox/compose.sandbox.yml`: o `sandbox` ganha o **alias `omni`** na `khal-wanet`, e
   `backend`+`worker` entram na `khal-wanet`. `make sandbox-up` cria a rede e recria os 3.

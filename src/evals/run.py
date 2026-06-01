@@ -15,15 +15,45 @@ import tempfile
 
 from src.evals.harness import AgentRun, parse_run
 from src.evals.journeys import SCENARIOS
+from src.interfaces.mcp.allowlist import TOOL_NAMES, mcp_qualified
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 AGENT_DIR = REPO / "agent"
-TOOLS = [
-    "find_customer_by_phone", "list_contracts", "get_invoice_status",
-    "get_outage_by_region", "create_ticket", "get_ticket_status",
-    "request_human_handoff", "search_knowledge_base",
-]
-ALLOWED = [f"mcp__luz-do-vale__{t}" for t in TOOLS]
+# Fonte ÚNICA: o tool-scope dos evals deriva da allowlist (R-02), na mesma ordem
+# canônica do server.py — sem lista hardcoded que diverge de produção.
+TOOLS = list(TOOL_NAMES)
+ALLOWED = mcp_qualified()
+
+# Gate de qualidade do agente (R-01): o CI reprova o merge quando o score < limiar.
+# Default 85 (docs/11). Configurável por env: EVAL_GATE_MIN (nome usado no ci.yml)
+# tem prioridade sobre EVAL_GATE; ambos aceitos para não acoplar o contrato a um nome.
+_DEFAULT_GATE = 85
+
+
+def compute_score(passed: int, total: int) -> int:
+    """Score 0-100 determinístico: ``round(100 * PASS / TOTAL)``.
+
+    Suíte vazia (``total == 0``) => 0 (sem evidência de qualidade não é aprovação).
+    """
+    if total <= 0:
+        return 0
+    return round(100 * passed / total)
+
+
+def gate_threshold() -> int:
+    """Limiar do gate (default 85). ``EVAL_GATE_MIN`` (ci.yml) precede ``EVAL_GATE``."""
+    raw = os.environ.get("EVAL_GATE_MIN") or os.environ.get("EVAL_GATE")
+    if raw is None or raw.strip() == "":
+        return _DEFAULT_GATE
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_GATE
+
+
+def gate_passes(score: int, threshold: int) -> bool:
+    """O gate passa quando o score atinge ou supera o limiar (``>=``)."""
+    return score >= threshold
 
 
 def run_agent(phone: str, message: str) -> AgentRun:
@@ -70,8 +100,16 @@ def main(argv: list[str]) -> int:
         else:
             fail += 1
             print(f"  FAIL  ({detail})")
+    total = ok + fail
+    score = compute_score(ok, total)
+    threshold = gate_threshold()
     print(f"\nRESULTADO: {ok} PASS, {fail} FAIL")
-    return 1 if fail else 0
+    print(f"SCORE: {score}/100 (gate >= {threshold})")
+    if not gate_passes(score, threshold):
+        print(f"GATE: REPROVADO (score {score} < {threshold})")
+        return 1
+    print("GATE: APROVADO")
+    return 0
 
 
 if __name__ == "__main__":

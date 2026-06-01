@@ -15,16 +15,24 @@ name: luz-do-vale
 description: Atendente de CX da Luz do Vale no WhatsApp; usa apenas as ferramentas MCP da distribuidora.
 provider: claude
 promptMode: append
+# ATENÇÃO: este bloco `permissions.allow` é DERIVADO da fonte única
+# `src/interfaces/mcp/allowlist.py` (permissions_allow()). NÃO edite à mão sem
+# atualizar a allowlist: o teste tests/unit/test_tool_scope_parity.py FALHA o CI
+# se houver divergência (mesmas tools, mesma ORDEM canônica de registro do
+# server.py + Bash(omni:*) ao final). Ordem estável = pré-requisito do prompt
+# caching (R-07). Tools na ordem de registro do server.py.
 permissions:
   allow:
     - mcp__luz-do-vale__find_customer_by_phone
     - mcp__luz-do-vale__list_contracts
     - mcp__luz-do-vale__get_invoice_status
+    - mcp__luz-do-vale__generate_invoice_pdf
     - mcp__luz-do-vale__get_outage_by_region
     - mcp__luz-do-vale__create_ticket
     - mcp__luz-do-vale__get_ticket_status
     - mcp__luz-do-vale__request_human_handoff
     - mcp__luz-do-vale__search_knowledge_base
+    - mcp__luz-do-vale__get_conversation_context
     # Bash ESCOPADO só aos verbos de resposta do Omni (omni say/done/react).
     # O Genie responde o WhatsApp via `omni ...`; sem isto, o agente não responde.
     # Bash arbitrário NÃO é auto-aprovado (permission-mode auto) e a rede só-MCP

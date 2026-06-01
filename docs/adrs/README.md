@@ -17,9 +17,10 @@ Decisoes arquiteturais relevantes desta entrega. Cada ADR e imutavel; mudancas v
 | [0011](./ADR-0011-personas-canonicas-deterministicas.md) | Personas canonicas com cenario fixo por nome (overlay deterministico) | Accepted |
 | [0012](./ADR-0012-auditoria-observabilidade-tool-call.md) | Auditoria e observabilidade por tool-call MCP (best-effort, PII mascarada; revisado: correlacao `traceId` ponta-a-ponta) | Accepted (revisado 2026-05-31, R-10) |
 | [0013](./ADR-0013-fronteira-memoria-transcricao-eventos-sessao.md) | Fronteira de memoria do agente: transcricao (Omni) vs eventos de sistema (`conversation_memory`) vs sessao (Genie) — duas tools read-only | Accepted |
-| [0014](./ADR-0014-token-context-optimization.md) | Token/Context Optimization (guarda-chuva: prompt caching + CAG + selecao de modelo por caso) | Accepted |
+| [0014](./ADR-0014-token-context-optimization.md) | Token/Context Optimization (guarda-chuva: prompt caching + CAG + selecao de modelo por caso; revisado: secao de IMPLEMENTACAO da Onda C — R-07/R-08/R-09) | Accepted (impl. 2026-05-31, R-07/R-08/R-09) |
 | [0016](./ADR-0016-cloud-provisioning-decisao-de-nao-fazer.md) | Cloud provisioning como DECISAO-DE-NAO-FAZER (sem Terraform/IaC real) | Accepted |
 | [0017](./ADR-0017-camada-legada-acl-mcp-over-rest.md) | Camada legada (FastAPI + Postgres) como sistema integrado via MCP-over-REST (Anti-Corruption Layer) | Accepted |
+| [0019](./ADR-0019-summarize-thread.md) | Resumo de thread no fechamento: SummarizerPort + adapter Haiku opt-in com fallback extrativo deterministico (default), gravando `kind=resumo` | Accepted |
 
 > ADR-0015 reservado: o comparativo de retrieval (R-14) foi **fundido no ADR-0004 revisado** em vez
 > de virar ADR autonoma, para reduzir a superficie documental. O numero 0015 fica livre para uma

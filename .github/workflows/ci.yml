@@ -19,6 +19,7 @@ on:
   pull_request:
     branches:
       - develop
+      - main
 
 # Cancela runs antigos do mesmo PR assim que um novo push chega ao branch dele.
 concurrency:

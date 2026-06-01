@@ -11,12 +11,12 @@ O desafio avalia setup reproduzivel (doc 02: "docker-compose, scripts"). E o doc
 
 Execucao 100% containerizada via `docker compose`, em **duas zonas de rede**:
 
-- **Zona app (confiavel)**: `gateway` (nginx), `frontend` (React/Vite), `backend` (FastAPI legado), `mcp-server`, `database` (PostgreSQL 18), `storage` (MinIO).
+- **Zona app (confiavel)**: `gateway` (nginx), `frontend` (React/Vite), `backend` (FastAPI legado), `mcp-server`, `database` (PostgreSQL 18), `minio` (MinIO).
 - **Zona sandbox (nao-confiavel)**: **uma unica** container `sandbox` onde o agente reside - roda `genie serve` (Claude Code), `omni` (Baileys) e `nats` internamente. Rede isolada.
 
 Propriedade de seguranca central: a **unica** forma de o agente alcancar o negocio e o `mcp-server` (HTTP/SSE, com guardrails). O agente nao acessa Postgres nem MinIO direto. Mesmo sob prompt injection, so faz o que as tools permitem. O worker de notificacao fala com a sandbox (`omni`/`nats`) num caminho separado, so de saida.
 
-`gateway` e o unico ponto exposto: `/` -> frontend, `/api` -> backend, `/mcp` -> mcp-server (SSE: `proxy_buffering off`, timeout alto), `/storage` -> MinIO.
+`gateway` e o unico ponto exposto: `/` -> frontend, `/api` -> backend, `/mcp` -> mcp-server (SSE: `proxy_buffering off`, timeout alto), `/files/` -> bucket de faturas do MinIO (ver ADR-0009).
 
 ### Sandbox unica (decisao)
 
@@ -35,7 +35,7 @@ O compose cresce por incremento, cada um validado antes do proximo:
 
 1. **`database` + `seed`** (este incremento).
 2. `backend` + `mcp-server`.
-3. `storage` (MinIO).
+3. `minio` (MinIO).
 4. `frontend` + `gateway`.
 5. `sandbox` (genie+omni+nats) + wiring.
 

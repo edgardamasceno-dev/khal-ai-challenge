@@ -99,7 +99,7 @@ class TestOutageApi:
 
 
 class TestTicketingApi:
-    def _body(self, key: str, tipo: str = "falta_energia") -> dict[str, str]:
+    def _body(self, key: str, tipo: str = "falta_energia") -> dict[str, object]:
         return {
             "titular_id": ANA_ID, "uc_id": UC_ID, "tipo": tipo,
             "descricao": "sem luz", "idempotency_key": key,
@@ -128,6 +128,47 @@ class TestTicketingApi:
     def test_ticket_inexistente_404(self, ctx: SimpleNamespace) -> None:
         assert ctx.client.get("/tickets/LDV20000101ZZZZ").status_code == 404
 
+    def test_resolve_muta_para_resolvido_e_notifica(self, ctx: SimpleNamespace) -> None:
+        # SPEC-020: o operador encerra pelo console -> chamado vira resolvido + aviso.
+        protocolo = ctx.client.post("/tickets", json=self._body("res-1")).json()["ticket"][
+            "protocolo"
+        ]
+        r = ctx.client.post(f"/tickets/{protocolo}/resolve")
+        assert r.status_code == 200 and r.json()["status"] == "resolvido"
+        # persistiu: GET reflete o novo estado.
+        assert ctx.client.get(f"/tickets/{protocolo}").json()["status"] == "resolvido"
+        # notificou o titular no WhatsApp (best-effort).
+        assert len(ctx.ticket_sender.enviados) == 1
+        chat_id, texto = ctx.ticket_sender.enviados[0]
+        assert chat_id == "555199990001" and protocolo in texto
+
+    def test_resolve_idempotente_nao_reenvia(self, ctx: SimpleNamespace) -> None:
+        protocolo = ctx.client.post("/tickets", json=self._body("res-2")).json()["ticket"][
+            "protocolo"
+        ]
+        ctx.client.post(f"/tickets/{protocolo}/resolve")
+        r2 = ctx.client.post(f"/tickets/{protocolo}/resolve")
+        assert r2.status_code == 200 and r2.json()["status"] == "resolvido"
+        assert len(ctx.ticket_sender.enviados) == 1  # zero reenvio
+
+    def test_resolve_inexistente_404(self, ctx: SimpleNamespace) -> None:
+        assert ctx.client.post("/tickets/LDV20000101ZZZZ/resolve").status_code == 404
+
+    def test_create_default_nao_notifica(self, ctx: SimpleNamespace) -> None:
+        # SPEC-020: agente MCP abre com notificar omitido (default false) -> sem aviso.
+        ctx.client.post("/tickets", json=self._body("ntf-1"))
+        assert ctx.ticket_sender.enviados == []
+
+    def test_create_notificar_true_repassa_e_avisa(self, ctx: SimpleNamespace) -> None:
+        # console envia notificar=true -> open_ticket recebe e avisa o titular.
+        body = self._body("ntf-2") | {"notificar": True}
+        r = ctx.client.post("/tickets", json=body)
+        assert r.status_code == 201
+        protocolo = r.json()["ticket"]["protocolo"]
+        assert len(ctx.ticket_sender.enviados) == 1
+        chat_id, texto = ctx.ticket_sender.enviados[0]
+        assert chat_id == "555199990001" and protocolo in texto
+
     def test_handoff(self, ctx: SimpleNamespace) -> None:
         r = ctx.client.post("/handoffs", json={"motivo": "fora de escopo"})
         assert r.status_code == 201 and r.json()["status"] == "pendente"
@@ -150,12 +191,38 @@ class TestTicketingApi:
 
 class TestConversationApi:
     def test_memoria_put_get_upsert(self, ctx: SimpleNamespace) -> None:
+        # Telefone NÃO cadastrado: fallback puro por chat_id (comportamento legado).
         chat = "5511999990001@s.whatsapp.net"
         r1 = ctx.client.put(f"/conversations/{chat}/memory", json={"chave": "k", "valor": {"v": 1}})
         assert r1.status_code == 200
         ctx.client.put(f"/conversations/{chat}/memory", json={"chave": "k", "valor": {"v": 2}})
         mem = ctx.client.get(f"/conversations/{chat}/memory").json()
         assert len(mem) == 1 and mem[0]["valor"] == {"v": 2}
+
+    def test_memoria_titular_resolvido_une_titular_e_chat(self, ctx: SimpleNamespace) -> None:
+        # R-12 / SPEC-027: para a Ana (cadastrada), a GET devolve a UNIÃO dos eventos do
+        # titular inteiro + do chat, deduplicada por chave — desfragmenta multi-UC/LID.
+        ana = "555199990001"
+        # grava por uma variante (com 9) que casa Ana: o PUT popula titular_id.
+        ctx.client.put(
+            "/conversations/5551999990001/memory",
+            json={"chave": "proativo.pagamento.confirmado", "valor": {"v": 1}},
+        )
+        # grava direto pelo telefone canônico, chave distinta.
+        ctx.client.put(
+            f"/conversations/{ana}/memory",
+            json={"chave": "ultimo_protocolo", "valor": {"p": "LDV1"}},
+        )
+        mem = ctx.client.get(f"/conversations/{ana}/memory").json()
+        chaves = {m["chave"] for m in mem}
+        # a GET pelo canônico enxerga AMBOS (titular + chat), mesmo o gravado por outra variante.
+        assert "proativo.pagamento.confirmado" in chaves
+        assert "ultimo_protocolo" in chaves
+
+    def test_memoria_get_telefone_desconhecido_nao_quebra(self, ctx: SimpleNamespace) -> None:
+        # Cliente desconhecido: sem titular -> fallback por chat, sem erro.
+        r = ctx.client.get("/conversations/550000000000/memory")
+        assert r.status_code == 200 and r.json() == []
 
 
 class TestKnowledgeApi:

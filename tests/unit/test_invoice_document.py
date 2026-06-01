@@ -117,18 +117,33 @@ def test_fatura_inexistente_404() -> None:
         svc.obter_ou_gerar(uuid.uuid4())
 
 
-def test_enviar_2a_via_anexa_pdf_e_link() -> None:
-    # SPEC-017: envia o PDF anexo ao telefone do titular + o link no texto.
+def test_enviar_2a_via_link_confiavel_e_anexo_besteffort() -> None:
+    # SPEC-017 (revisado): link público no texto (sempre) + anexo best-effort.
     svc, _, _ = _service()
     sender = RecordingSender()
     svc._sender = sender  # type: ignore[attr-defined]
     res = svc.enviar_2a_via(FAT_ID)
-    assert res["enviado"] is True and res["mes_referencia"] == "2026-05"
-    assert sender.docs == [("5581993112159", "fatura-2026-05.pdf")]  # anexo ao titular
-    assert sender.texts and "X-Expires" in sender.texts[0][1]  # link pré-assinado
+    assert res["enviado"] is True
+    assert res["enviado_link"] is True and res["enviado_anexo"] is True
+    assert sender.docs == [("5581993112159", "fatura-2026-05.pdf")]  # tentou o anexo
+    assert sender.texts and "files/" in sender.texts[0][1]  # link público (gateway)
 
 
-def test_enviar_2a_via_sem_sender_so_link() -> None:
+def test_enviar_2a_via_so_link_quando_anexo_falha() -> None:
+    # Anexo falha (upload de mídia bloqueado) -> ainda entrega pelo link.
+    svc, _, _ = _service()
+
+    class _SoTexto(RecordingSender):
+        def send_document(self, chat_id, conteudo, filename, caption=""):  # type: ignore[no-untyped-def]
+            return False
+
+    svc._sender = _SoTexto()  # type: ignore[attr-defined]
+    res = svc.enviar_2a_via(FAT_ID)
+    assert res["enviado"] is True and res["enviado_link"] is True
+    assert res["enviado_anexo"] is False
+
+
+def test_enviar_2a_via_sem_sender() -> None:
     svc, _, _ = _service()  # sem sender
     res = svc.enviar_2a_via(FAT_ID)
     assert res["enviado"] is False and res["url"]  # gera/persiste, só não envia

@@ -81,12 +81,12 @@ _CONTRACTS: dict[str, list[dict[str, Any]]] = {
 }
 
 
-def _inv(uc: str, mes: str, status: str) -> dict[str, Any]:
+def _inv(uc: str, mes: str, status: str, consumo_kwh: int = 200) -> dict[str, Any]:
     return {
         "id": f"F-{uc}-{mes}",
         "uc_id": uc,
         "mes_referencia": mes,
-        "consumo_kwh": 200,
+        "consumo_kwh": consumo_kwh,
         "valor_centavos": 19000,
         "valor_formatado": "R$ 190.00",
         "bandeira": "amarela",
@@ -97,9 +97,77 @@ def _inv(uc: str, mes: str, status: str) -> dict[str, Any]:
     }
 
 
+def _meses_ate(ano_fim: int, mes_fim: int, total: int) -> list[str]:
+    """Gera `total` 'YYYY-MM' terminando em (ano_fim, mes_fim), do mais antigo
+    para o mais recente — base do historico de ~24 meses dos insights (R-17)."""
+    meses: list[str] = []
+    ano, mes = ano_fim, mes_fim
+    for _ in range(total):
+        meses.append(f"{ano:04d}-{mes:02d}")
+        mes -= 1
+        if mes == 0:
+            mes, ano = 12, ano - 1
+    return list(reversed(meses))
+
+
+# Historico de ~24 meses da Ana (UC-ANA), determinIstico, para os insights (R-17):
+# - consumo cresce ~5 kWh/mes (tendencia 'subindo' nos ultimos meses);
+# - pico claro e isolado em 2025-07 (590 kWh) — verao, sazonalidade;
+# - 2026-05 fica em_aberto (preserva os testes de invoice/pdf existentes);
+# - YoY casavel: 2025-05 existe no historico para comparar com 2026-05.
+def _historico_ana() -> list[dict[str, Any]]:
+    meses = _meses_ate(2026, 5, 24)  # 2024-06 .. 2026-05
+    faturas: list[dict[str, Any]] = []
+    for i, mes in enumerate(meses):
+        consumo = 150 + i * 5  # base crescente
+        if mes == "2025-07":
+            consumo = 590  # pico isolado de verao
+        status = "em_aberto" if mes == "2026-05" else "paga"
+        faturas.append(_inv("UC-ANA", mes, status, consumo))
+    return faturas
+
+
 _INVOICES: dict[str, list[dict[str, Any]]] = {
-    "UC-ANA": [_inv("UC-ANA", "2026-05", "em_aberto"), _inv("UC-ANA", "2026-03", "paga")],
-    "UC-CARLOS": [_inv("UC-CARLOS", "2026-05", "paga")],  # sem faturas em aberto
+    "UC-ANA": _historico_ana(),
+    "UC-CARLOS": [_inv("UC-CARLOS", "2026-05", "paga", 800)],  # 1 mes: sem tendencia/YoY
+}
+
+
+# chat_id (telefone canonico E.164) -> memoria proativa (ADR-0005).
+# Ana tem memoria; Carlos nao. Chaves no padrao proativo.<tipo>.<subtipo>.
+_MEMORY: dict[str, list[dict[str, Any]]] = {
+    "555199990001": [
+        {
+            "chave": "proativo.outage.encerrada",
+            "valor": {"texto": "Energia restabelecida no Jardim das Flores."},
+            "atualizado_em": "2026-05-30T11:00:00Z",
+        },
+        {
+            "chave": "proativo.pagamento.confirmado",
+            "valor": {"texto": "Pagamento da fatura 2026-05 confirmado."},
+            "atualizado_em": "2026-05-30T12:00:00Z",
+        },
+    ],
+}
+
+
+# telefone canonico -> transcricao crua do chat (SPEC-018/SPEC-024), das mais recentes.
+# Ana tem conversa; Carlos nao (conversa nova -> transcricao vazia, best-effort).
+_TRANSCRIPTS: dict[str, list[dict[str, Any]]] = {
+    "555199990001": [
+        {
+            "id": "M-2",
+            "texto": "Perfeito, pode seguir com a segunda via entao.",
+            "do_cliente": True,
+            "em": "2026-05-30T12:05:00Z",
+        },
+        {
+            "id": "M-1",
+            "texto": "Oi! Vi que sua fatura de maio esta em aberto. Posso ajudar?",
+            "do_cliente": False,
+            "em": "2026-05-30T12:00:00Z",
+        },
+    ],
 }
 
 
@@ -181,6 +249,12 @@ class FakeLegacyApiClient:
         h = {"id": f"HO-{len(self.handoffs) + 1}", "status": "pendente", **payload}
         self.handoffs.append(h)
         return h
+
+    def get_conversation_memory(self, chat: str, limit: int = 10) -> list[dict[str, Any]]:
+        return list(_MEMORY.get(chat, []))[:limit]
+
+    def get_chat_messages(self, phone: str, limit: int = 10) -> list[dict[str, Any]]:
+        return list(_TRANSCRIPTS.get(phone, []))[:limit]
 
     def search_kb(self, query: str) -> list[dict[str, Any]]:
         q = query.lower()

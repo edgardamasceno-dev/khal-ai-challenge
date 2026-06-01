@@ -43,6 +43,7 @@ Sobe `database` + `seed` + `backend` + `mcp-server` (em `mcpnet`) + `egress-prox
 | `compose.sandbox.yml` | override: `egress-proxy` + `sandbox` + redes internas |
 | `egress/` | proxy tinyproxy com **allowlist** (Anthropic + WhatsApp) |
 | `sandbox-up.sh` | orquestra Postgres-genie + NATS(JS) + Omni API + `genie serve` |
+| `enable-media.sh` / `disable-media.sh` | **opt-in** da rota de mídia p/ o anexo PDF (SPEC-019/ADR-0010) |
 | `genie-wire.sh` | monta o agente `luz-do-vale` (frontmatter + persona) + MCP user-scope |
 | `agent/luz-do-vale.frontmatter.yaml` | **tool-scoping** (allow só MCP + `Bash(omni:*)`) |
 | `verify-scoping.ts` | prova determinística do comando escopado do Claude Code |

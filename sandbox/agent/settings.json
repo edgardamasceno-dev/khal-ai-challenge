@@ -1,0 +1,37 @@
+{
+  "$comment": [
+    "Settings do Claude Code do agente CX `luz-do-vale` (R-20 / ADR-0020).",
+    "Registra os hooks de guardrail determinístico (4a camada, no runtime do agente):",
+    "  - PreToolUse: valida toda tool antes de executar (allowlist, confirmacao, telefone).",
+    "  - UserPromptSubmit: barra prompt-injection obvio no texto do cliente.",
+    "O genie-wire.sh copia este arquivo para o escopo USER do Claude Code no sandbox",
+    "(claude-home: ~/.claude/settings.json), persistido no volume nao-versionado (ADR-0007).",
+    "O script guardrail.py vive em /srv/agent/hooks/ (bind-mount read-only de sandbox/agent).",
+    "REVERSIVEL: remover o registro (ou nao copiar) desliga os hooks sem afetar as demais",
+    "camadas (tool-scoping, rede so-MCP, validacao no MCP). matcher vazio = todos os eventos."
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /srv/agent/hooks/guardrail.py"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /srv/agent/hooks/guardrail.py"
+          }
+        ]
+      }
+    ]
+  }
+}

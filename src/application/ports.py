@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from src.domain.billing.documento import FaturaDetalhada
@@ -86,6 +87,9 @@ class ChamadoRepository(Protocol):
     def get_by_idempotency_key(self, key: str) -> Chamado | None: ...
     def list_for_titular(self, titular_id: uuid.UUID) -> list[Chamado]: ...
     def add(self, chamado: Chamado, idempotency_key: str) -> Chamado: ...
+    def set_status(
+        self, protocolo: str, status: str, atualizado_em: dt.datetime
+    ) -> Chamado | None: ...
 
 
 @runtime_checkable
@@ -101,7 +105,21 @@ class HandoffRepository(Protocol):
 @runtime_checkable
 class MemoriaRepository(Protocol):
     def list_for_chat(self, chat_id: str) -> list[MemoriaConversa]: ...
-    def upsert(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa: ...
+    def list_for_titular(self, titular_id: uuid.UUID) -> list[MemoriaConversa]: ...
+    def upsert(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> MemoriaConversa: ...
+    def inserir_se_ausente(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> bool: ...
 
 
 @runtime_checkable
@@ -119,6 +137,25 @@ class OmniSender(Protocol):
     def send_document(
         self, chat_id: str, conteudo: bytes, filename: str, caption: str = ""
     ) -> bool: ...
+
+
+@runtime_checkable
+class PresencePort(Protocol):
+    """Sinais de presença do canal (Omni): "digitando"/typing e read receipt.
+
+    Porta segregada do `OmniSender` (ISP): só o runtime/bridge que reage a um
+    inbound precisa emitir presença, então quem só envia texto/documento não
+    carrega esses métodos. Best-effort (ADR-0018): Omni indisponível ou endpoint
+    ausente -> retorna False e segue; nunca bloqueia o turno do agente.
+    """
+
+    def enviar_presenca(self, chat_id: str, estado: str = "composing") -> bool:
+        """Publica o chat-state do agente: 'composing'|'paused'|'available'."""
+        ...
+
+    def marcar_lida(self, chat_id: str) -> bool:
+        """Marca as mensagens do chat como lidas (read receipt / markRead)."""
+        ...
 
 
 @runtime_checkable
@@ -158,3 +195,53 @@ class ChatTranscriptPort(Protocol):
 class UnitOfWork(Protocol):
     def commit(self) -> None: ...
     def rollback(self) -> None: ...
+
+
+@runtime_checkable
+class ToolCallAuditSink(Protocol):
+    """Destino da auditoria por chamada de ferramenta MCP (T3, observabilidade).
+
+    Puramente observacional: best-effort. O `RECORDER` que o consome engole
+    qualquer falha — uma escrita de auditoria que quebra NUNCA derruba a tool
+    nem altera seu retorno/guardrails. O `record` recebe PII já mascarada.
+    """
+
+    def record(self, registro: AuditRecord) -> None: ...
+
+
+@dataclass(frozen=True)
+class AuditRecord:
+    """Registro imutável de uma chamada de ferramenta MCP (input já mascarado)."""
+
+    tool_name: str
+    result_status: str  # 'ok' | 'error' | 'denied' (CHECK no banco)
+    latency_ms: int
+    input_redacted: dict[str, Any]
+    error_code: str | None = None
+    trace_id: str | None = None
+    chat_id: str | None = None
+
+
+# --- Summarize (R-15 / SPEC-028 / ADR-0019) --------------------------------
+# Resumo de thread no fechamento de ticket/handoff. O LLM fica ATRÁS desta porta
+# e é OPT-IN; o default é o fallback extrativo determinístico
+# (`src/domain/conversation/summarize.py`), que respeita "sem LLM no caminho
+# crítico". O serviço orquestrador (`ThreadSummaryService`) trata QUALQUER falha
+# do adapter caindo no fallback — o fechamento nunca bloqueia.
+
+
+class SummarizerError(Exception):
+    """Falha do adapter de resumo (timeout/empty/erro de API). Sinaliza ao
+    `ThreadSummaryService` para cair no fallback extrativo determinístico."""
+
+
+@runtime_checkable
+class SummarizerPort(Protocol):
+    """Resume uma lista de mensagens da conversa num texto curto.
+
+    Implementação default (sem rede): `resumo_extrativo` (domínio puro). O adapter
+    LLM (`AnthropicHaikuSummarizer`) é opt-in. Contrato: devolve um resumo
+    não-vazio OU levanta `SummarizerError` — jamais retorna string vazia
+    silenciosamente (assim o serviço sabe quando cair no fallback)."""
+
+    def summarize(self, mensagens: list[MensagemChat], *, max_chars: int = 600) -> str: ...

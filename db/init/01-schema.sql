@@ -143,3 +143,5 @@ CREATE INDEX idx_uc_bairro            ON unidades_consumidoras (bairro, cidade, 
 CREATE INDEX idx_faturas_uc           ON faturas (uc_id);
 CREATE INDEX idx_interrupcoes_area    ON interrupcoes (bairro, cidade, uf, status);
 CREATE INDEX idx_chamados_titular     ON chamados (titular_id);
+-- R-12 (SPEC-027): leitura da memória pela chave lógica primária (titular_id).
+CREATE INDEX idx_convmem_titular      ON conversation_memory (titular_id);

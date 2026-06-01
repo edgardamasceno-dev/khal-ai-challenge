@@ -32,4 +32,4 @@ compose-down:
 # Eval ao vivo do agente: dirige `claude -p` (sem key, ADR-0007) contra o /mcp.
 # Requer o stack no ar (make compose-up) e o Claude Code autenticado.
 agent-evals:
-	python -m src.evals.run
+	uv run python -m src.evals.run

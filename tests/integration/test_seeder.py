@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from src.application.persona_registry import carregar_personas
 from src.infrastructure.orm import (
+    ChamadoORM,
     FaturaORM,
     InterrupcaoORM,
     LeituraORM,
@@ -17,6 +18,11 @@ from src.infrastructure.orm import (
 from src.infrastructure.seed import seed_personas
 
 FIXED_NOW = dt.datetime(2026, 5, 30, 12, tzinfo=dt.UTC)
+
+# Default do .env.example: as 3 canônicas com nome completo.
+_DEFAULT = (
+    "Ana Souza:555199990001;Carlos Lima:555199990002;Joana Pereira:555199990003"
+)
 
 
 def _count(session, model, *where) -> int:
@@ -86,6 +92,60 @@ def test_seed_multi_uc_cria_varias_unidades_distintas(session) -> None:
     ).all()
     assert len(numeros) == 4 and len(set(numeros)) == 4  # distintos
     assert rep.faturas == 6 * 4
+
+
+def test_seed_default_canonico_outage_ana_e_religacao_joana(session) -> None:
+    # Com o default (ADR-0011), o seeder materializa os cenários canônicos:
+    # interrupção ATIVA no bairro da Ana e chamado de religação da Joana.
+    personas = carregar_personas(_DEFAULT, 42)
+    perfis = {p.nome: perfil for p, perfil in personas}
+    ana, joana = perfis["Ana Souza"], perfis["Joana Pereira"]
+    assert ana.bairro == "Jardim das Flores" and ana.outage_ativa is True
+    assert joana.classe == "rural" and joana.corte_religacao is True
+
+    rep = seed_personas(session, personas, history_months=6, now=FIXED_NOW)
+    session.flush()
+
+    # (a) Interrupção ativa no bairro canônico da Ana.
+    assert (
+        _count(
+            session,
+            InterrupcaoORM,
+            InterrupcaoORM.status == "ativa",
+            InterrupcaoORM.bairro == ana.bairro,
+        )
+        == 1
+    )
+    # (b) Chamado de religação da Joana (persona rural).
+    joana_tit = session.scalar(
+        select(TitularORM).where(TitularORM.telefone_principal == "555199990003")
+    )
+    assert (
+        _count(
+            session,
+            ChamadoORM,
+            ChamadoORM.titular_id == joana_tit.id,
+            ChamadoORM.tipo == "religacao",
+        )
+        == 1
+    )
+    assert rep.interrupcoes >= 1
+    assert rep.chamados >= 1
+
+    # Idempotência: re-rodar não duplica interrupção nem chamado.
+    rep2 = seed_personas(session, personas, history_months=6, now=FIXED_NOW)
+    session.flush()
+    assert rep2.interrupcoes == 0
+    assert rep2.chamados == 0
+    assert (
+        _count(
+            session,
+            InterrupcaoORM,
+            InterrupcaoORM.status == "ativa",
+            InterrupcaoORM.bairro == ana.bairro,
+        )
+        == 1
+    )
 
 
 def test_seed_telefone_resolve_titular(session) -> None:

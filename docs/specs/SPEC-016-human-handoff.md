@@ -35,7 +35,7 @@ dispatcher usa para computar o `sessionId`).
   Best-effort (Omni off -> retorna False; handoff segue registrado).
 - `HandoffRepository`: `add` (com `remetente`), `list_pendentes()`, `get(id)`,
   `set_status(id, status, operador)`.
-- `TicketingService`: `request_handoff(remetente, chamado_id, motivo)` cria o handoff e
+- `TicketingService`: `request_handoff(*, chamado_id, motivo, remetente)` cria o handoff e
   **pausa** a IA; `list_handoffs()`; `resume_handoff(id, operador)` **retoma** + marca `resolvido`.
 - REST: `POST /handoffs` (recebe `remetente`, pausa), `GET /handoffs` (fila de pendentes),
   `POST /handoffs/{id}/resume` (retoma).

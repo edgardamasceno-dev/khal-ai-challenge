@@ -15,7 +15,7 @@ Estabelecer o nucleo de dominio (Billing, Outage, Ticketing, Knowledge, Conversa
 ## 3. Escopo
 
 - Value objects com validacao (CPF, Telefone, Dinheiro, MesReferencia).
-- Modelos de persistencia (SQLAlchemy) + migracoes Alembic das tabelas do dicionario de dados.
+- Modelos de persistencia (SQLAlchemy, src/infrastructure/orm.py) sobre o schema SQL versionado em db/init/01-schema.sql (sem Alembic).
 - Repositorios por aggregate (Billing, Outage, Ticketing, Knowledge, Conversation).
 - Script de seed determinístico, idempotente, parametrizado por `.env`.
 
@@ -27,7 +27,7 @@ Estabelecer o nucleo de dominio (Billing, Outage, Ticketing, Knowledge, Conversa
 ## 5. Criterios de aceite
 
 - `CPF` invalido e rejeitado na construcao; `CPF` gerado pelo seed e valido no digito verificador.
-- `make seed` popula o banco e, rodado duas vezes, nao duplica linhas (upsert por chave natural).
+- `python -m src.infrastructure.seed` popula o banco e, rodado duas vezes, nao duplica linhas (upsert por chave natural).
 - Existe exatamente 1 interrupcao ativa no bairro da persona `ana.souza`.
 - Cada UC tem 24 faturas (uma por mes), com sazonalidade verificavel (media verao > media inverno).
 - Telefones ausentes no `.env` viram placeholders sem quebrar o seed.
@@ -35,7 +35,7 @@ Estabelecer o nucleo de dominio (Billing, Outage, Ticketing, Knowledge, Conversa
 ## 6. Plano de testes
 
 - Unit: value objects (CPF modulo 11, Telefone E.164, Dinheiro em centavos, MesReferencia).
-- Integration: migracoes + seed contra Postgres efemero; contagem por tabela; idempotencia (rodar 2x).
+- Integration: schema (db/init/01-schema.sql) + seed contra Postgres efemero; contagem por tabela; idempotencia (rodar 2x).
 - Propriedade: consumo de verao > inverno por UC.
 
 ## 7. Riscos
@@ -46,10 +46,11 @@ Estabelecer o nucleo de dominio (Billing, Outage, Ticketing, Knowledge, Conversa
 ## 8. PR relacionado
 
 - Branch: `feature/SPEC-000-domain-seed`.
-- PR #1 (em aberto): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/1
+- PR #1 (merged): https://github.com/edgardamasceno-dev/khal-ai-challenge/pull/1
   - Incremento 1 (ADR-0006, passo 1): serviço `database` (Postgres 18) + schema
     SQL + seed determinístico/idempotente via `docker compose`. Valida os
     critérios de aceite de dados (24 faturas/UC, 1 outage ativa, sazonalidade,
     idempotência).
-  - Pendente em incrementos seguintes: value objects completos, modelos
-    SQLAlchemy + migrações Alembic, repositórios e seed em Python.
+  - Entregue: value objects (src/domain/shared/value_objects.py), modelos
+    SQLAlchemy (src/infrastructure/orm.py) sobre schema SQL, repositórios e seed
+    determinístico em Python.

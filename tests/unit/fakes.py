@@ -147,6 +147,23 @@ class FakeChamadoRepository:
         self._by_idem[idempotency_key] = chamado
         return chamado
 
+    def set_status(
+        self, protocolo: str, status: str, atualizado_em: dt.datetime
+    ) -> Chamado | None:
+        for idx, c in enumerate(self._items):
+            if c.protocolo == protocolo:
+                atualizado = dataclasses.replace(
+                    c, status=status, atualizado_em=atualizado_em
+                )
+                self._items[idx] = atualizado
+                # mantem o indice por idempotency_key coerente (mesma linha)
+                self._by_idem = {
+                    k: (atualizado if v.protocolo == protocolo else v)
+                    for k, v in self._by_idem.items()
+                }
+                return atualizado
+        return None
+
 
 class FakeHandoffRepository:
     def __init__(self) -> None:
@@ -225,16 +242,54 @@ class FakeMemoriaRepository:
         self._store: dict[tuple[str, str], MemoriaConversa] = {}
 
     def list_for_chat(self, chat_id: str) -> list[MemoriaConversa]:
-        return [m for (c, _), m in self._store.items() if c == chat_id]
+        return sorted(
+            (m for (c, _), m in self._store.items() if c == chat_id),
+            key=lambda m: m.chave,
+        )
 
-    def upsert(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa:
+    def list_for_titular(self, titular_id: uuid.UUID) -> list[MemoriaConversa]:
+        return sorted(
+            (m for m in self._store.values() if m.titular_id == titular_id),
+            key=lambda m: m.chave,
+        )
+
+    def upsert(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> MemoriaConversa:
         import datetime as dt
 
+        existente = self._store.get((chat_id, chave))
+        # Numa colisão, preserva o titular_id já gravado se o novo vier None.
+        tid = titular_id if titular_id is not None else (
+            existente.titular_id if existente is not None else None
+        )
         m = MemoriaConversa(
-            chat_id=chat_id, chave=chave, valor=valor, atualizado_em=dt.datetime.now(dt.UTC)
+            chat_id=chat_id, chave=chave, valor=valor,
+            atualizado_em=dt.datetime.now(dt.UTC), titular_id=tid,
         )
         self._store[(chat_id, chave)] = m
         return m
+
+    def inserir_se_ausente(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> bool:
+        import datetime as dt
+
+        if (chat_id, chave) in self._store:
+            return False
+        self._store[(chat_id, chave)] = MemoriaConversa(
+            chat_id=chat_id, chave=chave, valor=valor,
+            atualizado_em=dt.datetime.now(dt.UTC), titular_id=titular_id,
+        )
+        return True
 
 
 class FakeUnitOfWork:

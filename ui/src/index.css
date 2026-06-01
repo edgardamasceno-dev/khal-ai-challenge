@@ -2,12 +2,14 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -33,6 +35,18 @@
     --color-secondary: var(--secondary);
     --color-primary-foreground: var(--primary-foreground);
     --color-primary: var(--primary);
+    --color-status-ok: var(--status-ok);
+    --color-status-ok-foreground: var(--status-ok-foreground);
+    --color-status-ok-surface: var(--status-ok-surface);
+    --color-status-warn: var(--status-warn);
+    --color-status-warn-foreground: var(--status-warn-foreground);
+    --color-status-warn-surface: var(--status-warn-surface);
+    --color-status-danger: var(--status-danger);
+    --color-status-danger-foreground: var(--status-danger-foreground);
+    --color-status-danger-surface: var(--status-danger-surface);
+    --color-status-info: var(--status-info);
+    --color-status-info-foreground: var(--status-info-foreground);
+    --color-status-info-surface: var(--status-info-surface);
     --color-popover-foreground: var(--popover-foreground);
     --color-popover: var(--popover);
     --color-card-foreground: var(--card-foreground);
@@ -49,14 +63,28 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
+    --background: oklch(0.992 0.002 247);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
+    /* Azul-eletrico de marca (utility). Distinto dos tres tons de status. */
+    --primary: oklch(0.53 0.165 248);
+    --primary-foreground: oklch(0.985 0.01 248);
+    /* Severidade por cor (regra de dominio): ok=verde, warn=ambar, danger=vermelho, info=azul. */
+    --status-ok: oklch(0.52 0.13 150);
+    --status-ok-foreground: oklch(0.44 0.13 150);
+    --status-ok-surface: oklch(0.95 0.045 150);
+    --status-warn: oklch(0.64 0.15 72);
+    --status-warn-foreground: oklch(0.52 0.13 67);
+    --status-warn-surface: oklch(0.96 0.05 78);
+    --status-danger: oklch(0.577 0.245 27.325);
+    --status-danger-foreground: oklch(0.51 0.21 27);
+    --status-danger-surface: oklch(0.955 0.035 25);
+    --status-info: oklch(0.55 0.16 264);
+    --status-info-foreground: oklch(0.48 0.17 264);
+    --status-info-surface: oklch(0.955 0.03 264);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
     --muted: oklch(0.97 0 0);
@@ -66,7 +94,8 @@
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    /* Anel de foco no azul-eletrico de marca (mesmo H do --primary). */
+    --ring: oklch(0.53 0.165 248);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -84,14 +113,28 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
+    --background: oklch(0.145 0.004 247);
     --foreground: oklch(0.985 0 0);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
+    /* Azul-eletrico de marca, versao clara para fundo escuro. */
+    --primary: oklch(0.7 0.155 248);
+    --primary-foreground: oklch(0.17 0.03 248);
+    /* Severidade por cor no tema escuro (luminancia elevada p/ contraste AA). */
+    --status-ok: oklch(0.75 0.15 152);
+    --status-ok-foreground: oklch(0.8 0.15 152);
+    --status-ok-surface: oklch(0.28 0.07 152);
+    --status-warn: oklch(0.82 0.14 80);
+    --status-warn-foreground: oklch(0.85 0.13 82);
+    --status-warn-surface: oklch(0.3 0.06 75);
+    --status-danger: oklch(0.704 0.191 22.216);
+    --status-danger-foreground: oklch(0.78 0.16 22);
+    --status-danger-surface: oklch(0.3 0.09 22);
+    --status-info: oklch(0.72 0.15 264);
+    --status-info-foreground: oklch(0.78 0.14 264);
+    --status-info-surface: oklch(0.3 0.08 264);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
@@ -101,7 +144,8 @@
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    /* Anel de foco no azul-eletrico de marca, versao clara para fundo escuro. */
+    --ring: oklch(0.7 0.155 248);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);

@@ -41,6 +41,20 @@ def render_notificacao(evento: EventoCX) -> str:
             f"Oi, {nome}! ✅ Confirmamos o pagamento da sua fatura de {d.get('mes', '—')} "
             f"no valor de {d.get('valor', '—')}. Obrigado! 🙌"
         )
+    if evento.tipo == "pagamento" and evento.subtipo == "lembrete":
+        # R-16 / SPEC-026: lembrete proativo de vencimento. D-0 (vence hoje) tem um tom
+        # mais urgente que D-3 (faltam 3 dias). Determinístico, sem LLM.
+        dias = d.get("dias_para_vencer")
+        if dias == 0:
+            prazo = "*vence hoje*"
+        else:
+            prazo = f"vence em {dias} dias" if isinstance(dias, int) else "está perto de vencer"
+        return (
+            f"Oi, {nome}! 💡 Passando para lembrar: sua fatura de {d.get('mes', '—')} "
+            f"no valor de {d.get('valor', '—')} {prazo} (vencimento em "
+            f"{d.get('vencimento', '—')}). Pague pelo PIX ou boleto para evitar juros. "
+            "Precisa da 2ª via? É só pedir por aqui. 🙂"
+        )
     if evento.tipo == "pagamento" and evento.subtipo == "vencida":
         return (
             f"Oi, {nome}! ⚠️ Sua fatura de {d.get('mes', '—')} no valor de "

@@ -1,7 +1,15 @@
-# ADR-0004 - Retrieval lexico com Strategy plugavel
+# ADR-0004 - Retrieval lexico com Strategy plugavel (revisado: comparativo de estrategias)
 
 - Status: Accepted
 - Data: 2026-05-30
+- Revisao: 2026-05-31 (R-14, `docs/11-roadmap-melhorias-agente.md`). Adicionada a secao
+  **"Comparativo de estrategias de retrieval"** (RAG-lexico x CAG x pgvector x Graph RAG/RLM),
+  que era o item de vaga Lead "retrieval comparado". A **decisao de MVP permanece a mesma**
+  (retrieval lexico no filesystem atras de um Strategy); a revisao apenas torna **explicita e
+  justificada** a escolha de nao-fazer as alternativas avancadas nesta escala, e nomeia o
+  gatilho de migracao. Optou-se por **fundir no ADR-0004** em vez de abrir um ADR-0015 autonomo,
+  para reduzir a superficie documental (ja sao 13 ADRs) — a decisao de retrieval continua **uma
+  so**. A estrategia **CAG** referida aqui e a mesma do ADR-0014 (R-08).
 
 ## Context
 
@@ -23,6 +31,32 @@ Positivas:
 
 Negativas:
 - Busca lexica nao captura sinonimia tao bem quanto semantica; e o scan em processo nao escala para milhares de docs. Aceitavel para KB pequena e curada.
+
+## Comparativo de estrategias de retrieval (revisao 2026-05-31, R-14)
+
+A decisao de senioridade Lead nao e "usar a tecnica mais sofisticada", e **escolher a estrategia
+certa para a escala e justificar o que se deixa de fora**. A KB da Luz do Vale tem **6 verbetes /
+~3,5 KB / 79 linhas** (corpus pequeno, curado, de baixa rotatividade). Sob esse perfil:
+
+| Estrategia | O que e | Custo/dependencia | Cabe na escala atual? | Decisao |
+|---|---|---|---|---|
+| **RAG-lexico (filesystem)** | scan + ranking lexico sobre `kb/*.md` em processo, atras do `KnowledgeRetrievalPort` | nenhuma credencial; 1 ida-e-volta MCP por consulta | sim | **MVP (atual)** — reproduzivel, citavel, sem custo |
+| **CAG (Cache-Augmented Generation)** | carregar a KB **inteira** no system prompt cacheado (`cache_control`); sem tool no caminho critico | nenhuma credencial; ~3,5 KB cacheados por turno | sim, e otimo nesta escala | **Recomendado (R-08/ADR-0014)** — corta o hop de busca e o risco da query errar o artigo; `search_knowledge_base` fica como fallback |
+| **RAG-semantico (pgvector + embeddings)** | embeddings (local, ex. sentence-transformers) + busca vetorial + rerank | infra de vetor + modelo de embedding; sem API paga | **overkill** a 3,5 KB; ganho real so com centenas/milhares de docs | **Pos-MVP** — vira estrategia atras do mesmo port quando a KB crescer (gatilho abaixo) |
+| **Graph RAG** | grafo de entidades/relacoes + recuperacao por caminho | construcao e manutencao de grafo de conhecimento | **nao** — KB de FAQ sem grafo de entidades natural | **Rejeitado** (nesta escala) — manutencao do grafo > beneficio |
+| **RLM / filesystem-as-context** | tratar o `kb/` como contexto navegavel pelo proprio modelo | nenhuma | parcial — e o que CAG/lexico ja exploram | **Subsumido** por CAG (KB inteira no contexto) + `kb/` como fonte unica |
+
+**Conclusao da comparacao.** Para a escala atual, o ponto otimo e **CAG** (KB inteira no prefixo
+cacheado, ADR-0014/R-08) com **RAG-lexico como fallback** para perguntas fora dos verbetes
+carregados — ambos sem credencial paga no caminho critico. As tecnicas avancadas
+(pgvector/embeddings, Graph RAG) sao **deliberadamente nao-implementadas**: o sinal de engenharia
+vem de **decidir e justificar**, nao de pagar complexidade que a escala nao pede.
+
+**Gatilho de migracao para RAG-semantico (pgvector):** quando a KB ultrapassar a ordem de **algumas
+dezenas de artigos** (ou passar a sofrer com sinonimia/parafrase que o lexico erra de forma medivel
+nos evals), troca-se a estrategia **por tras do mesmo `KnowledgeRetrievalPort`**, sem tocar o use
+case — exatamente o que o Strategy existe para permitir. Graph RAG so entraria se o dominio
+ganhasse um grafo de entidades/relacoes real (nao e o caso de um FAQ de utility).
 
 ## Alternatives
 

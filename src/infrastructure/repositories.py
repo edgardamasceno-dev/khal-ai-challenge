@@ -12,10 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from src.application.ports import AuditRecord
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.errors import ConflictError
+from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
 from src.domain.shared.value_objects import CPF, Dinheiro, Telefone, TipoChamado
 from src.domain.ticketing.entities import Chamado, Handoff
 from src.infrastructure.orm import (
@@ -27,6 +29,7 @@ from src.infrastructure.orm import (
     MemoriaORM,
     PagamentoORM,
     TitularORM,
+    ToolCallAuditORM,
     UnidadeORM,
 )
 
@@ -80,7 +83,8 @@ def _to_handoff(o: HandoffORM) -> Handoff:
 
 def _to_memoria(o: MemoriaORM) -> MemoriaConversa:
     return MemoriaConversa(
-        chat_id=o.chat_id, chave=o.chave, valor=o.valor, atualizado_em=o.atualizado_em
+        chat_id=o.chat_id, chave=o.chave, valor=o.valor,
+        atualizado_em=o.atualizado_em, titular_id=o.titular_id,
     )
 
 
@@ -280,6 +284,19 @@ class SqlChamadoRepository:
         self._s.flush()
         return _to_chamado(o)
 
+    def set_status(
+        self, protocolo: str, status: str, atualizado_em: dt.datetime
+    ) -> Chamado | None:
+        o = self._s.execute(
+            select(ChamadoORM).where(ChamadoORM.protocolo == protocolo)
+        ).scalar_one_or_none()
+        if o is None:
+            return None
+        o.status = status
+        o.atualizado_em = atualizado_em
+        self._s.flush()
+        return _to_chamado(o)
+
 
 class SqlHandoffRepository:
     def __init__(self, session: Session) -> None:
@@ -320,6 +337,11 @@ class SqlHandoffRepository:
 
 
 class SqlMemoriaRepository:
+    """Memória de conversa. Chave lógica primária = `titular_id` (R-12 / SPEC-027);
+    `chat_id` permanece como chave de escrita/legado (idempotência por chat) e como
+    fallback de leitura para registros pré-backfill. Ver ADR-0013.
+    """
+
     def __init__(self, session: Session) -> None:
         self._s = session
 
@@ -329,19 +351,95 @@ class SqlMemoriaRepository:
         ).scalars().all()
         return [_to_memoria(o) for o in rows]
 
-    def upsert(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa:
+    def list_for_titular(self, titular_id: uuid.UUID) -> list[MemoriaConversa]:
+        """Eventos do titular inteiro (R-12), independentemente do chat_id/LID que os
+        gerou — desfragmenta o multi-UC/LID. Lê só registros já chaveados por titular."""
+        rows = self._s.execute(
+            select(MemoriaORM)
+            .where(MemoriaORM.titular_id == titular_id)
+            .order_by(MemoriaORM.chave)
+        ).scalars().all()
+        return [_to_memoria(o) for o in rows]
+
+    def upsert(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> MemoriaConversa:
+        """Upsert idempotente por (chat_id, chave). `titular_id` (default None preserva
+        os callers que ainda não resolvem titular) popula a chave lógica de R-12. Numa
+        colisão, atualiza também o titular_id quando informado (corrige registros legados)."""
         agora = dt.datetime.now(dt.UTC)
+        set_: dict[str, object] = {"valor": valor, "atualizado_em": agora}
+        if titular_id is not None:
+            set_["titular_id"] = titular_id
         stmt = (
             pg_insert(MemoriaORM)
-            .values(id=uuid.uuid4(), chat_id=chat_id, chave=chave, valor=valor, atualizado_em=agora)
+            .values(
+                id=uuid.uuid4(), chat_id=chat_id, titular_id=titular_id,
+                chave=chave, valor=valor, atualizado_em=agora,
+            )
             .on_conflict_do_update(
                 index_elements=[MemoriaORM.chat_id, MemoriaORM.chave],
-                set_={"valor": valor, "atualizado_em": agora},
+                set_=set_,
             )
             .returning(MemoriaORM)
         )
         o = self._s.execute(stmt).scalar_one()
         return _to_memoria(o)
+
+    def inserir_se_ausente(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> bool:
+        """Insere SÓ se (chat_id, chave) ainda não existe (on_conflict_do_nothing).
+        Devolve True quando inseriu, False quando já havia. Guarda de idempotência
+        do lembrete proativo (R-16 / SPEC-026): a `chave` carrega o dia, garantindo no
+        máximo 1 lembrete por fatura por dia mesmo com reexecução do cron."""
+        agora = dt.datetime.now(dt.UTC)
+        stmt = (
+            pg_insert(MemoriaORM)
+            .values(
+                id=uuid.uuid4(), chat_id=chat_id, titular_id=titular_id,
+                chave=chave, valor=valor, atualizado_em=agora,
+            )
+            .on_conflict_do_nothing(index_elements=[MemoriaORM.chat_id, MemoriaORM.chave])
+            .returning(MemoriaORM.id)
+        )
+        inserido = self._s.execute(stmt).scalar_one_or_none()
+        return inserido is not None
+
+    def backfill_titular_id(self) -> int:
+        """Backfill idempotente e determinístico (R-12): liga registros órfãos
+        (titular_id IS NULL) ao titular cujo telefone principal casa o chat_id pelas
+        variantes do nono dígito (SPEC-015). Reexecutável (boot/seed/CI); registros
+        sem titular correspondente seguem NULL e são lidos pelo fallback por chat.
+        Retorna quantas linhas foram ligadas."""
+        orfaos = self._s.execute(
+            select(MemoriaORM).where(MemoriaORM.titular_id.is_(None))
+        ).scalars().all()
+        if not orfaos:
+            return 0
+        titulares = self._s.execute(select(TitularORM)).scalars().all()
+        por_variante: dict[str, uuid.UUID] = {}
+        for t in titulares:
+            canonico = normalizar_msisdn(t.telefone_principal)
+            for variante in variantes_nono_digito(canonico):
+                por_variante.setdefault(variante, t.id)
+        ligados = 0
+        for o in orfaos:
+            tid = por_variante.get(normalizar_msisdn(o.chat_id))
+            if tid is not None:
+                o.titular_id = tid
+                ligados += 1
+        if ligados:
+            self._s.flush()
+        return ligados
 
 
 class SqlAlchemyUnitOfWork:
@@ -357,3 +455,31 @@ class SqlAlchemyUnitOfWork:
 
     def rollback(self) -> None:
         self._s.rollback()
+
+
+class SqlToolCallAuditSink:
+    """Sink SQL da auditoria por tool-call (T3). Persiste o `AuditRecord` na
+    tabela `tool_call_audit`, respeitando o CHECK de result_status (no banco).
+
+    Cada escrita é autocontida (commit próprio) para não acoplar a auditoria à
+    transação de negócio da tool. Falhas NÃO são engolidas aqui — quem chama
+    (o RECORDER) é o responsável por garantir o best-effort.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def record(self, registro: AuditRecord) -> None:
+        self._s.add(
+            ToolCallAuditORM(
+                id=uuid.uuid4(),
+                trace_id=registro.trace_id,
+                chat_id=registro.chat_id,
+                tool_name=registro.tool_name,
+                input_redacted=registro.input_redacted,
+                result_status=registro.result_status,
+                latency_ms=registro.latency_ms,
+                error_code=registro.error_code,
+            )
+        )
+        self._s.commit()

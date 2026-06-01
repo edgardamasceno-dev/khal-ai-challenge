@@ -57,6 +57,7 @@ erDiagram
     }
     HANDOFF_QUEUE {
         uuid id
+        text remetente
         text motivo
         text status
         text operador

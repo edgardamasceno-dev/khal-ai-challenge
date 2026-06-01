@@ -162,6 +162,9 @@ class CreateTicketRequest(BaseModel):
     tipo: TipoChamado
     descricao: str | None = None
     idempotency_key: str = Field(min_length=4, max_length=128)
+    # SPEC-020: o console do operador envia notificar=true p/ avisar o titular
+    # por WhatsApp ao abrir. O agente MCP omite (default false).
+    notificar: bool = False
 
 
 class CreateTicketResponse(BaseModel):

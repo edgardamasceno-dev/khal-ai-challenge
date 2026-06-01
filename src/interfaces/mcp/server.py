@@ -7,17 +7,56 @@ canal/Omni (contexto confiavel), nao e input livre do agente.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from src.application.ports import AuditRecord, ToolCallAuditSink
+from src.interfaces.mcp.audit import AuditedCxTools
 from src.interfaces.mcp.client import HttpxLegacyApiClient
 from src.interfaces.mcp.tools import CxTools
 
+logger = logging.getLogger("luz_do_vale.mcp.server")
+
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
 
-_tools = CxTools(HttpxLegacyApiClient(BACKEND_URL))
+
+class _SessionPerWriteAuditSink:
+    """Sink de auditoria com sessao curta por escrita (T3).
+
+    Abre uma sessao SQLAlchemy isolada por `record()` para nao acoplar a
+    auditoria a transacao da tool. Se o DB nao estiver configurado/acessivel
+    no boot (DATABASE_URL ausente), degrada para no-op (apenas-log). Falhas
+    pontuais propagam para o RECORDER, que as engole (best-effort).
+    """
+
+    def __init__(self) -> None:
+        # Import tardio: o MCP server roda mesmo sem DB no caminho da tool.
+        from src.infrastructure.db import SessionLocal
+        from src.infrastructure.repositories import SqlToolCallAuditSink
+
+        self._SessionLocal = SessionLocal
+        self._SqlSink = SqlToolCallAuditSink
+
+    def record(self, registro: AuditRecord) -> None:
+        with self._SessionLocal() as session:
+            self._SqlSink(session).record(registro)
+
+
+def _build_audit_sink() -> ToolCallAuditSink | None:
+    """Constroi o sink de auditoria; degrada para None (apenas-log) se o DB
+    nao estiver configurado. Nunca quebra o boot do MCP server."""
+    try:
+        return _SessionPerWriteAuditSink()
+    except Exception:  # noqa: BLE001 — sem DB => observabilidade so por log.
+        logger.warning("tool_call_audit sem persistencia (apenas-log)", exc_info=True)
+        return None
+
+
+_audit_sink = _build_audit_sink()
+_tools = AuditedCxTools(CxTools(HttpxLegacyApiClient(BACKEND_URL)), sink=_audit_sink)
 mcp = FastMCP("luz-do-vale", host="0.0.0.0", port=8000)
 
 
@@ -85,5 +124,65 @@ def search_knowledge_base(query: str) -> dict[str, Any]:
     return _tools.search_knowledge_base(query)
 
 
+@mcp.tool()
+def get_account_events(phone: str) -> dict[str, Any]:
+    """Le os FATOS DE SISTEMA da conta do titular (read-only) pelo telefone.
+
+    Devolve eventos deterministicos ja registrados (ADR-0005): pagamento confirmado,
+    interrupcao aberta/encerrada, ultimo protocolo. NAO e a transcricao da conversa
+    (para isso use get_chat_history). Chame no PRIMEIRO turno (junto de
+    find_customer_by_phone) para NAO reoferecer o que o sistema ja resolveu.
+    Nao escreve nem muta estado.
+    """
+    return _tools.get_account_events(phone)
+
+
+@mcp.tool()
+def get_chat_history(phone: str) -> dict[str, Any]:
+    """Le a TRANSCRICAO da conversa do titular no WhatsApp/Omni (read-only) pelo telefone.
+
+    Devolve as ultimas mensagens trocadas (o que foi DITO por cliente e agente/operador),
+    para retomar o fio quando a sessao perdeu o contexto (pos cold-start/reset) — NAO sao
+    fatos de sistema (para isso use get_account_events). Best-effort: Omni indisponivel ou
+    conversa nova -> mensagens vazias; nao afirme ausencia. Nao escreve nem muta estado.
+    """
+    return _tools.get_chat_history(phone)
+
+
+@mcp.tool()
+def get_consumption_insights(phone: str) -> dict[str, Any]:
+    """Insights de consumo (kWh) do titular sobre ~24 meses (read-only) pelo telefone.
+
+    Sumariza o historico de faturas: media mensal, tendencia (subindo/estavel/caindo),
+    variacao do ultimo mes vs media, pico de consumo e comparativo sazonal ano-a-ano —
+    por unidade consumidora. Calculo deterministico (sem LLM), sem mutacao. Use quando o
+    cliente pergunta 'por que minha conta subiu', 'quanto gastei', 'meu consumo aumentou'.
+    Backend instavel -> {'encontrado': False, 'erro': 'instabilidade'} (sem stacktrace).
+    """
+    return _tools.get_consumption_insights(phone)
+
+
+def build_app() -> Any:
+    """Constroi o app ASGI (Starlette) do transporte streamable-HTTP com o
+    middleware de traceId montado (R-10).
+
+    Fronteira de observabilidade ponta-a-ponta: o `TraceIdMiddleware` le o header
+    de trace da requisicao /mcp (`x-trace-id`, com fallback W3C) e o publica num
+    ContextVar; o RECORDER do `AuditedCxTools` o le no momento de cada tool-call e
+    grava em `tool_call_audit.trace_id` — sem tocar a assinatura de nenhuma tool.
+    Import tardio do middleware mantem o modulo carregavel sem Starlette no path
+    de quem so introspecta o registro de tools (ex.: teste de paridade)."""
+    from src.interfaces.mcp.trace import TraceIdMiddleware
+
+    app = mcp.streamable_http_app()
+    app.add_middleware(TraceIdMiddleware)
+    return app
+
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    import uvicorn
+
+    # R-10: subimos o app explicitamente (em vez de mcp.run) para montar o
+    # TraceIdMiddleware sobre o transporte streamable-HTTP. host/port espelham o
+    # FastMCP("luz-do-vale", host=..., port=...) configurado acima.
+    uvicorn.run(build_app(), host=mcp.settings.host, port=mcp.settings.port)

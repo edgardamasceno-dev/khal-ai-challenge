@@ -110,6 +110,13 @@ class TipoChamado(StrEnum):
         return _SLA_POR_TIPO[self.value]
 
 
+class StatusChamado(StrEnum):
+    """Estados do chamado. O operador encerra `aberto` -> `resolvido` (SPEC-020)."""
+
+    aberto = "aberto"
+    resolvido = "resolvido"
+
+
 @dataclass(frozen=True)
 class Protocolo:
     """Protocolo de chamado: 'LDV' + AAAAMMDD + sufixo. Max. 16 chars."""

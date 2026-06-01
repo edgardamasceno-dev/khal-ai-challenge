@@ -24,6 +24,7 @@ from src.application.ports import (
     MemoriaRepository,
     ObjectStorage,
     OmniSender,
+    SummarizerPort,
     TitularRepository,
     UnidadeRepository,
     UnitOfWork,
@@ -31,13 +32,23 @@ from src.application.ports import (
 from src.domain.billing.documento import DocumentoFatura, FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa, MensagemChat
+from src.domain.conversation.summarize import resumo_extrativo
 from src.domain.notifications.entities import EventoCX
 from src.domain.notifications.templates import render_notificacao
 from src.domain.outage.entities import Interrupcao
 from src.domain.shared.errors import InvariantError, NotFoundError
 from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
-from src.domain.shared.value_objects import Protocolo, Telefone, TipoChamado
+from src.domain.shared.value_objects import (
+    Protocolo,
+    StatusChamado,
+    Telefone,
+    TipoChamado,
+)
 from src.domain.ticketing.entities import Chamado, Handoff
+from src.domain.ticketing.mensagens import (
+    mensagem_chamado_aberto,
+    mensagem_chamado_resolvido,
+)
 
 Clock = Callable[[], dt.datetime]
 
@@ -284,28 +295,30 @@ class InvoiceDocumentService:
         return DocumentoFatura(url=url, presigned=presign, expires_at=expira, gerado_agora=gerou)
 
     def enviar_2a_via(self, fatura_id: uuid.UUID, expires: int = 3600) -> dict[str, object]:
-        """Envia a 2ª via ao titular: PDF **anexo** no WhatsApp + **link** no texto
-        (ADR-0003 / SPEC-017). Destino = telefone cadastrado do dono da fatura."""
+        """Envia a 2ª via ao titular: **link** no texto (canal confiável) + PDF **anexo**
+        best-effort (ADR-0003 / SPEC-017). O anexo depende do upload de mídia do WhatsApp,
+        que pode falhar em egress restrito — por isso o link (público, via gateway) sempre
+        vai e a tool não bloqueia. Destino = telefone cadastrado do dono da fatura."""
         detalhe = self._detalhar(fatura_id)  # resolve titular dono + valida a fatura
-        doc = self.obter_ou_gerar(fatura_id, presign=True, expires=expires)
-        enviado = False
+        doc = self.obter_ou_gerar(fatura_id, presign=False)  # URL pública (gateway)
+        enviado_link = enviado_anexo = False
         if self._sender is not None:
-            pdf = self._renderer.render(detalhe)
-            mes = detalhe.fatura.mes_referencia
             telefone = detalhe.titular.telefone.value
-            caption = f"Luz do Vale — 2ª via da fatura de {mes}."
-            enviado = self._sender.send_document(
-                telefone, pdf, f"fatura-{mes}.pdf", caption
+            mes = detalhe.fatura.mes_referencia
+            enviado_link = self._sender.send_text(
+                telefone, f"📄 Aqui está a 2ª via da sua fatura de {mes}: {doc.url}"
             )
-            if enviado:
-                self._sender.send_text(telefone, f"Link da sua 2ª via: {doc.url}")
+            pdf = self._renderer.render(detalhe)
+            enviado_anexo = self._sender.send_document(
+                telefone, pdf, f"fatura-{mes}.pdf", f"Luz do Vale — fatura de {mes}."
+            )
         return {
-            "enviado": enviado,
+            "enviado": enviado_link or enviado_anexo,
+            "enviado_link": enviado_link,
+            "enviado_anexo": enviado_anexo,
             "mes_referencia": detalhe.fatura.mes_referencia,
             "status": detalhe.fatura.status,
             "url": doc.url,
-            "presigned": doc.presigned,
-            "expires_at": doc.expires_at.isoformat() if doc.expires_at else None,
         }
 
 
@@ -332,7 +345,9 @@ class TicketingService:
         uow: UnitOfWork,
         control: ChannelControlPort | None = None,
         directory: ChatDirectoryPort | None = None,
+        sender: OmniSender | None = None,
         clock: Clock | None = None,
+        thread_summary: ThreadSummaryService | None = None,
     ) -> None:
         self._chamados = chamados
         self._handoffs = handoffs
@@ -340,7 +355,10 @@ class TicketingService:
         self._uow = uow
         self._control = control
         self._directory = directory
+        self._sender = sender
         self._clock: Clock = clock or _utcnow
+        # Resumo de thread no fechamento (R-15). Opt-in e best-effort: sem ele, no-op.
+        self._thread_summary = thread_summary
 
     def open_ticket(
         self,
@@ -350,12 +368,14 @@ class TicketingService:
         tipo: str,
         descricao: str | None,
         idempotency_key: str,
+        notificar: bool = False,
     ) -> tuple[Chamado, bool]:
         existente = self._chamados.get_by_idempotency_key(idempotency_key)
         if existente is not None:
             return existente, False
 
-        if self._titulares.get(titular_id) is None:
+        titular = self._titulares.get(titular_id)
+        if titular is None:
             raise NotFoundError("Titular nao encontrado")
 
         try:
@@ -372,7 +392,7 @@ class TicketingService:
             uc_id=uc_id,
             tipo=tipo_vo,
             descricao=descricao,
-            status="aberto",
+            status=StatusChamado.aberto.value,
             sla_horas=tipo_vo.sla_horas,
             canal="whatsapp",
             aberto_em=agora,
@@ -384,6 +404,10 @@ class TicketingService:
         except Exception:
             self._uow.rollback()
             raise
+        # Notificação só no fluxo do operador (UI); o agente MCP abre com
+        # notificar=False, pois ele já responde o cliente na própria conversa.
+        if notificar:
+            self._notificar(titular, mensagem_chamado_aberto(titular.nome, salvo))
         return salvo, True
 
     def get_ticket_status(self, protocolo: str) -> Chamado:
@@ -391,6 +415,43 @@ class TicketingService:
         if chamado is None:
             raise NotFoundError(f"Chamado {protocolo} nao encontrado")
         return chamado
+
+    def resolve_ticket(self, protocolo: str) -> Chamado:
+        """Encerra o chamado como `resolvido` e notifica o titular por WhatsApp
+        (SPEC-020). Idempotente: reencerrar um chamado já resolvido não reenvia."""
+        chamado = self._chamados.get_by_protocolo(protocolo)
+        if chamado is None:
+            raise NotFoundError(f"Chamado {protocolo} nao encontrado")
+        if chamado.status == StatusChamado.resolvido.value:
+            return chamado
+        try:
+            atualizado = self._chamados.set_status(
+                protocolo, StatusChamado.resolvido.value, self._clock()
+            )
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        assert atualizado is not None
+        titular = self._titulares.get(atualizado.titular_id)
+        if titular is not None:
+            self._notificar(titular, mensagem_chamado_resolvido(titular.nome, atualizado))
+            self._resumir_thread(titular.telefone.value, atualizado.protocolo)
+        return atualizado
+
+    def _resumir_thread(self, phone: str | None, protocolo: str | None) -> None:
+        """Dispara o resumo de thread no fechamento (R-15), best-effort. Sem o
+        serviço configurado é no-op; qualquer falha é engolida (não bloqueia)."""
+        if self._thread_summary is None:
+            return
+        self._thread_summary.summarize_thread_safe(phone, protocolo)
+
+    def _notificar(self, titular: Titular, texto: str) -> None:
+        """Envia o texto ao WhatsApp do titular. Best-effort: o `OmniSender` não
+        lança (retorna bool), e sem sender configurado é no-op."""
+        if self._sender is None:
+            return
+        self._sender.send_text(titular.telefone.value, texto)
 
     def list_customer_tickets(self, titular_id: uuid.UUID) -> list[Chamado]:
         return self._chamados.list_for_titular(titular_id)
@@ -465,11 +526,16 @@ class TicketingService:
             self._uow.rollback()
             raise
         assert resolvido is not None
+        # Resumo da thread no fechamento do handoff (R-15), best-effort. Chaveado
+        # por ts (sem protocolo de ticket): o handoff pode não ter chamado.
+        self._resumir_thread(resolvido.remetente, None)
         return resolvido
 
 
 class MemoryService:
-    """Memoria curta por chatId (RF-11)."""
+    """Memória de conversa. A chave lógica primária é o `titular_id` (R-12 / SPEC-027):
+    desacopla a memória do chat/telefone e desfragmenta multi-UC/LID. O `chat_id`
+    sobrevive como chave de escrita/legado e fallback de leitura (ADR-0013)."""
 
     def __init__(self, memorias: MemoriaRepository, uow: UnitOfWork) -> None:
         self._memorias = memorias
@@ -478,9 +544,32 @@ class MemoryService:
     def get(self, chat_id: str) -> list[MemoriaConversa]:
         return self._memorias.list_for_chat(chat_id)
 
-    def put(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa:
+    def get_for_titular(self, titular_id: uuid.UUID) -> list[MemoriaConversa]:
+        """Eventos do titular inteiro (R-12), independentemente do chat que os gerou."""
+        return self._memorias.list_for_titular(titular_id)
+
+    def get_unificado(
+        self, chat_id: str, titular_id: uuid.UUID | None
+    ) -> list[MemoriaConversa]:
+        """União determinística (R-12) de `list_for_titular` + `list_for_chat`,
+        deduplicada por `chave` (preferindo o registro já chaveado por titular). Cobre
+        os registros legados sem titular_id e os fragmentos multi-UC/LID. Sem titular
+        resolvido -> fallback puro por chat (comportamento legado preservado)."""
+        if titular_id is None:
+            return self._memorias.list_for_chat(chat_id)
+        por_chave: dict[str, MemoriaConversa] = {}
+        # chat primeiro (base/legado); titular sobrescreve (registro canônico R-12).
+        for m in self._memorias.list_for_chat(chat_id):
+            por_chave[m.chave] = m
+        for m in self._memorias.list_for_titular(titular_id):
+            por_chave[m.chave] = m
+        return sorted(por_chave.values(), key=lambda m: m.chave)
+
+    def put(
+        self, chat_id: str, chave: str, valor: object, titular_id: uuid.UUID | None = None
+    ) -> MemoriaConversa:
         try:
-            salvo = self._memorias.upsert(chat_id, chave, valor)
+            salvo = self._memorias.upsert(chat_id, chave, valor, titular_id)
             self._uow.commit()
         except Exception:
             self._uow.rollback()
@@ -585,6 +674,10 @@ class ProactiveService:
             if bairro:
                 cidade, uf = self._regiao_do_bairro(titular, bairro)
                 self._interrupcoes.encerrar(bairro, cidade, uf, now)
+        elif (tipo, subtipo) == ("pagamento", "lembrete"):
+            # R-16 / SPEC-026: lembrete é puramente informativo — NÃO muta estado de
+            # domínio (não dá baixa, não vence fatura). NO-OP determinístico.
+            return
         else:
             return
         try:
@@ -593,15 +686,28 @@ class ProactiveService:
             self._uow.rollback()
             raise
 
+    def _resolver_titular_id(self, telefone: str) -> uuid.UUID | None:
+        """Telefone do evento -> titular_id (R-12 / SPEC-027), tolerante ao 9º dígito.
+        Best-effort: telefone não cadastrado -> None (memória ainda grava por chat_id)."""
+        titular = self._titulares.find_by_phone_em(
+            variantes_nono_digito(normalizar_msisdn(telefone))
+        )
+        return titular.id if titular is not None else None
+
     def processar(self, evento: EventoCX) -> dict[str, object]:
-        """Worker: render determinístico -> envia (Omni) -> grava na memória."""
+        """Worker: render determinístico -> envia (Omni) -> grava na memória.
+
+        A memória é chaveada por titular_id (R-12): resolve o titular pelo telefone do
+        evento e propaga ao upsert, mantendo o chat_id como chave de escrita/legado."""
         texto = render_notificacao(evento)
         enviado = self._sender.send_text(evento.chat_id, texto)
+        titular_id = self._resolver_titular_id(evento.telefone)
         try:
             self._memorias.upsert(
                 evento.chat_id, evento.memoria_chave,
                 {"texto": texto, "em": self._clock().isoformat(), "dados": evento.dados,
                  "idempotency_key": evento.idempotency_key},
+                titular_id,
             )
             self._uow.commit()
         except Exception:
@@ -642,3 +748,213 @@ class ProactiveService:
             "encontrado": True, "titular": titular.nome, "telefone": normalizado.value,
             "pagamentos": pagamentos, "outages": outages,
         }
+
+
+class ProactiveReminderService:
+    """Lembrete proativo de vencimento D-3/D-0 (R-16 / SPEC-026). DETERMINÍSTICO, sem LLM.
+
+    Roda num cron/entrypoint próprio de backend (não no worker, que só consome
+    `utilitycx.>`): varre faturas em aberto/vencida cujo vencimento cai em D-3 ou D-0
+    relativo a `hoje` (data local America/São_Paulo, injetada) e publica um evento
+    `utilitycx.pagamento.lembrete` por match elegível. O worker existente renderiza o
+    template canônico, envia pelo Omni (best-effort) e grava em conversation_memory.
+
+    Idempotência por (fatura_id, dia): grava primeiro um marcador insert-only na
+    memória (`on_conflict_do_nothing`) com a chave dia-escopada; só publica quando o
+    marcador é novo. Assim o cron pode reexecutar sem duplicar lembretes."""
+
+    # Offsets (em dias) a partir de hoje em que se lembra o vencimento. D-3 e D-0.
+    OFFSETS_LEMBRETE: tuple[int, ...] = (3, 0)
+    STATUS_LEMBRAVEIS: tuple[str, ...] = ("em_aberto", "vencida")
+
+    def __init__(
+        self,
+        bus: EventBus,
+        memorias: MemoriaRepository,
+        titulares: TitularRepository,
+        faturas: FaturaRepository,
+        uow: UnitOfWork,
+        clock: Clock | None = None,
+    ) -> None:
+        self._bus = bus
+        self._memorias = memorias
+        self._titulares = titulares
+        self._faturas = faturas
+        self._uow = uow
+        self._clock: Clock = clock or _utcnow
+
+    @staticmethod
+    def _idempotency_key(fatura_id: uuid.UUID, dia: dt.date) -> str:
+        return f"pagamento.lembrete.{fatura_id}.{dia.isoformat()}"
+
+    @staticmethod
+    def _memoria_chave(fatura_id: uuid.UUID, dia: dt.date) -> str:
+        """Chave dia-escopada do marcador de idempotência (não colide com a memória
+        de notificação `proativo.pagamento.lembrete` gravada pelo worker)."""
+        return f"proativo.pagamento.lembrete.{fatura_id}.{dia.isoformat()}"
+
+    def varrer(self, hoje: dt.date | None = None) -> dict[str, object]:
+        """Varre as faturas elegíveis e dispara os lembretes D-3/D-0 de `hoje`.
+
+        `hoje` é a data local (São Paulo); se omitida, deriva do clock. Idempotente:
+        reexecutar no mesmo dia não republica. Determinístico (ordena por telefone+
+        fatura) e best-effort por titular (uma falha não interrompe a varredura)."""
+        ref = hoje or self._clock().date()
+        # mapeia data_de_vencimento -> dias_para_vencer, para casar D-3/D-0.
+        alvos = {ref + dt.timedelta(days=off): off for off in self.OFFSETS_LEMBRETE}
+        publicados: list[dict[str, object]] = []
+        for titular in sorted(self._titulares.list_all(), key=lambda t: t.telefone.value):
+            for fatura, uc_numero in self._faturas_lembraveis(titular):
+                dias = alvos.get(fatura.vencimento)
+                if dias is None:
+                    continue
+                if self._disparar_lembrete(titular, fatura, uc_numero, dias, ref):
+                    publicados.append({
+                        "fatura_id": str(fatura.id),
+                        "telefone": titular.telefone.value,
+                        "dias_para_vencer": dias,
+                    })
+        return {"data": ref.isoformat(), "lembretes": publicados, "total": len(publicados)}
+
+    def _faturas_lembraveis(
+        self, titular: Titular
+    ) -> list[tuple[Fatura, str]]:
+        out: list[tuple[Fatura, str]] = []
+        for c in self._titulares.list_contratos(titular.id):
+            uc = c.unidade
+            for f in self._faturas.list_for_unidade(uc.id, None, 24):
+                if f.status in self.STATUS_LEMBRAVEIS:
+                    out.append((f, uc.numero_uc))
+        return out
+
+    def _disparar_lembrete(
+        self, titular: Titular, fatura: Fatura, uc_numero: str, dias: int, dia: dt.date
+    ) -> bool:
+        """Guarda de idempotência (insert-only) -> publica o evento. Devolve True se
+        publicou (marcador novo), False se já lembrado neste dia."""
+        marcador = {
+            "fatura_id": str(fatura.id), "dia": dia.isoformat(), "dias_para_vencer": dias,
+        }
+        try:
+            novo = self._memorias.inserir_se_ausente(
+                titular.telefone.value,
+                self._memoria_chave(fatura.id, dia),
+                marcador,
+                titular.id,
+            )
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        if not novo:
+            return False
+        evento = EventoCX(
+            tipo="pagamento",
+            subtipo="lembrete",
+            telefone=titular.telefone.value,
+            nome=titular.nome,
+            idempotency_key=self._idempotency_key(fatura.id, dia),
+            dados={
+                "fatura_id": str(fatura.id),
+                "numero_uc": uc_numero,
+                "mes": fatura.mes_referencia,
+                "valor": fatura.valor.formatado(),
+                "vencimento": fatura.vencimento.isoformat(),
+                "dias_para_vencer": dias,
+            },
+        )
+        self._bus.publish(evento.subject, ProactiveService._payload(evento))
+        return True
+
+
+class ThreadSummaryService:
+    """Resume a thread no fechamento de ticket/handoff (R-15 / SPEC-028 / ADR-0019).
+
+    Lê a transcrição da conversa (Omni, via `ChatTranscriptPort`), gera um resumo
+    e o grava em `conversation_memory` como `kind=resumo` (tag no JSONB `valor`,
+    sem coluna nova — segue ADR-0013). A geração é por **estratégia**: tenta o
+    `SummarizerPort` injetado (LLM Haiku, opt-in) e, em QUALQUER falha — ou quando
+    `summarizer is None` —, cai no `resumo_extrativo` (determinístico, default).
+
+    Best-effort por design: nenhuma exceção propaga para o chamador
+    (`resolve_ticket`/`resume_handoff`). O fechamento **nunca** depende do resumo.
+    """
+
+    def __init__(
+        self,
+        transcript: ChatTranscriptPort,
+        memorias: MemoriaRepository,
+        titulares: TitularRepository,
+        uow: UnitOfWork,
+        summarizer: SummarizerPort | None = None,
+        clock: Clock | None = None,
+        max_mensagens: int = 50,
+    ) -> None:
+        self._transcript = transcript
+        self._memorias = memorias
+        self._titulares = titulares
+        self._uow = uow
+        self._summarizer = summarizer
+        self._clock: Clock = clock or _utcnow
+        self._max_mensagens = max_mensagens
+
+    def _resolver_titular(self, phone: str) -> Titular | None:
+        """Telefone/LID -> titular (tolerante ao 9º dígito). None se desconhecido."""
+        return self._titulares.find_by_phone_em(
+            variantes_nono_digito(normalizar_msisdn(phone))
+        )
+
+    def _gerar(self, mensagens: list[MensagemChat]) -> tuple[str, str]:
+        """Aplica a estratégia: LLM (se opt-in e ok) ou fallback extrativo.
+        Devolve (texto, fonte) onde fonte ∈ {"haiku", "extrativo"}."""
+        if self._summarizer is not None:
+            try:
+                texto = self._summarizer.summarize(mensagens)
+                if texto and texto.strip():
+                    return texto.strip(), "haiku"
+            except Exception:  # noqa: BLE001 - qualquer falha -> fallback determinístico
+                pass
+        return resumo_extrativo(mensagens), "extrativo"
+
+    @staticmethod
+    def _chave(protocolo: str | None, ts_iso: str) -> str:
+        """Chave da memória do resumo: por protocolo quando há ticket; senão por ts."""
+        sufixo = protocolo if protocolo else ts_iso
+        return f"resumo.{sufixo}"
+
+    def summarize_thread(self, phone: str, protocolo: str | None = None) -> dict[str, object]:
+        """Resolve o titular, lê a transcrição, resume e grava `kind=resumo`.
+
+        Devolve `{"resumo", "fonte", "gravado"}`. Determinístico no fallback.
+        Idempotente por chave (`resumo.<protocolo|ts>`): mesma chave -> upsert."""
+        titular = self._resolver_titular(phone)
+        mensagens, _, _ = self._transcript.mensagens(phone, self._max_mensagens, None)
+        texto, fonte = self._gerar(mensagens)
+        agora_iso = self._clock().isoformat()
+        valor = {"texto": texto, "kind": "resumo", "fonte": fonte, "em": agora_iso}
+        chat_id = titular.telefone.value if titular is not None else phone
+        try:
+            self._memorias.upsert(
+                chat_id,
+                self._chave(protocolo, agora_iso),
+                valor,
+                titular.id if titular is not None else None,
+            )
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        return {"resumo": texto, "fonte": fonte, "gravado": True}
+
+    def summarize_thread_safe(
+        self, phone: str | None, protocolo: str | None = None
+    ) -> None:
+        """Variante best-effort para o disparo no fechamento: engole QUALQUER falha
+        (inclusive de persistência) e é no-op sem telefone. O fechamento de
+        ticket/handoff NUNCA é bloqueado por uma falha de resumo."""
+        if not phone:
+            return
+        try:
+            self.summarize_thread(phone, protocolo)
+        except Exception:  # noqa: BLE001 - best-effort: resumo jamais bloqueia o fechamento
+            return

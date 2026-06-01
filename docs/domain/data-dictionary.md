@@ -118,6 +118,7 @@ PostgreSQL. Nomes em snake_case. `Dinheiro` armazenado em centavos (inteiro). PI
 | --- | --- | --- |
 | id | uuid PK | |
 | chamado_id | uuid FK | |
+| remetente | text | id do chat (LID/telefone) p/ pausar/retomar a IA no Omni (SPEC-016) |
 | motivo | text | |
 | status | text | pendente/assumido/resolvido |
 | operador | text | null ate assumido |
@@ -135,6 +136,12 @@ PostgreSQL. Nomes em snake_case. `Dinheiro` armazenado em centavos (inteiro). PI
 | atualizado_em | timestamptz | |
 
 ## tool_call_audit
+
+> Materializada (T3 / ADR-0012): ORM `ToolCallAuditORM` + sink atrás do port `ToolCallAuditSink`.
+> O RECORDER do MCP (`src/interfaces/mcp/audit.py`) grava um registro por chamada de tool com
+> input **mascarado** (telefone → sufixo de 4 dígitos; CPF nunca em claro), `result_status`,
+> `latency_ms` e `error_code`. Persistência **best-effort** (falha de auditoria nunca derruba a
+> tool) + log estruturado JSON por chamada.
 
 | Coluna | Tipo | Notas |
 | --- | --- | --- |

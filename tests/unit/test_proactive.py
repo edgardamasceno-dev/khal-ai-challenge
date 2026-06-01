@@ -93,6 +93,29 @@ def test_processar_envia_e_grava_memoria() -> None:
     assert memos[0].chave == "proativo.pagamento.confirmado"
 
 
+def test_processar_popula_titular_id_na_memoria() -> None:
+    # R-12 / SPEC-027: a memória nasce chaveada por titular_id (resolve pelo telefone
+    # do evento, tolerante ao 9º dígito) — sem mudar a assinatura/contrato externo.
+    svc, _, _, mem = _svc()
+    svc.processar(_ev())
+    por_titular = mem.list_for_titular(TID)
+    assert por_titular and por_titular[0].chave == "proativo.pagamento.confirmado"
+    assert mem.list_for_chat("5581993112159")[0].titular_id == TID
+
+
+def test_processar_telefone_desconhecido_grava_sem_titular_id() -> None:
+    # Back-compat: telefone não cadastrado -> titular_id None, memória ainda grava por chat.
+    svc, _, _, mem = _svc()
+    ev = EventoCX(
+        tipo="pagamento", subtipo="confirmado", telefone="550000000000",
+        nome="Fulano", idempotency_key="pay-x", dados={"mes": "05/2026"},
+    )
+    svc.processar(ev)
+    memos = mem.list_for_chat("550000000000")
+    assert memos and memos[0].titular_id is None
+    assert mem.list_for_titular(TID) == []
+
+
 def test_candidatos_lista_pagamento_e_outage() -> None:
     svc, _, _, _ = _svc(com_outage=True)
     c = svc.candidatos("5581993112159")

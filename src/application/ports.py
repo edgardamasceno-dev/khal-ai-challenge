@@ -105,7 +105,21 @@ class HandoffRepository(Protocol):
 @runtime_checkable
 class MemoriaRepository(Protocol):
     def list_for_chat(self, chat_id: str) -> list[MemoriaConversa]: ...
-    def upsert(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa: ...
+    def list_for_titular(self, titular_id: uuid.UUID) -> list[MemoriaConversa]: ...
+    def upsert(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> MemoriaConversa: ...
+    def inserir_se_ausente(
+        self,
+        chat_id: str,
+        chave: str,
+        valor: object,
+        titular_id: uuid.UUID | None = None,
+    ) -> bool: ...
 
 
 @runtime_checkable

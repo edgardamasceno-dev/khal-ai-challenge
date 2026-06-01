@@ -3,6 +3,10 @@
 Assina `utilitycx.>` no NATS e processa cada evento deterministicamente
 (render -> Omni -> conversation_memory). **Sem LLM** no caminho.
 
+Roteamento por wildcard: qualquer (tipo, subtipo) válido cai aqui sem código novo —
+inclui o lembrete de vencimento `utilitycx.pagamento.lembrete` publicado pelo cron
+ProactiveReminderService (R-16 / SPEC-026), renderizado pelo template canônico.
+
     python -m src.infrastructure.events.worker
 """
 

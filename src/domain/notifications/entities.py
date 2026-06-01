@@ -11,6 +11,7 @@ from src.domain.shared.errors import InvariantError
 EVENTOS_VALIDOS: set[tuple[str, str]] = {
     ("pagamento", "confirmado"),
     ("pagamento", "vencida"),
+    ("pagamento", "lembrete"),  # R-16 / SPEC-026: lembrete proativo de vencimento D-3/D-0
     ("outage", "aberta"),
     ("outage", "encerrada"),
 }
@@ -21,7 +22,7 @@ class EventoCX:
     """Evento canônico disparado pelo operador (baixa de pagamento, interrupção)."""
 
     tipo: str  # "pagamento" | "outage"
-    subtipo: str  # "confirmado" | "aberta" | "encerrada"
+    subtipo: str  # "confirmado" | "vencida" | "lembrete" | "aberta" | "encerrada"
     telefone: str  # E.164 sem '+'
     nome: str
     idempotency_key: str

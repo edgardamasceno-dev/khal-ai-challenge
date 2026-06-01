@@ -517,7 +517,9 @@ class TicketingService:
 
 
 class MemoryService:
-    """Memoria curta por chatId (RF-11)."""
+    """Memória de conversa. A chave lógica primária é o `titular_id` (R-12 / SPEC-027):
+    desacopla a memória do chat/telefone e desfragmenta multi-UC/LID. O `chat_id`
+    sobrevive como chave de escrita/legado e fallback de leitura (ADR-0013)."""
 
     def __init__(self, memorias: MemoriaRepository, uow: UnitOfWork) -> None:
         self._memorias = memorias
@@ -526,9 +528,32 @@ class MemoryService:
     def get(self, chat_id: str) -> list[MemoriaConversa]:
         return self._memorias.list_for_chat(chat_id)
 
-    def put(self, chat_id: str, chave: str, valor: object) -> MemoriaConversa:
+    def get_for_titular(self, titular_id: uuid.UUID) -> list[MemoriaConversa]:
+        """Eventos do titular inteiro (R-12), independentemente do chat que os gerou."""
+        return self._memorias.list_for_titular(titular_id)
+
+    def get_unificado(
+        self, chat_id: str, titular_id: uuid.UUID | None
+    ) -> list[MemoriaConversa]:
+        """União determinística (R-12) de `list_for_titular` + `list_for_chat`,
+        deduplicada por `chave` (preferindo o registro já chaveado por titular). Cobre
+        os registros legados sem titular_id e os fragmentos multi-UC/LID. Sem titular
+        resolvido -> fallback puro por chat (comportamento legado preservado)."""
+        if titular_id is None:
+            return self._memorias.list_for_chat(chat_id)
+        por_chave: dict[str, MemoriaConversa] = {}
+        # chat primeiro (base/legado); titular sobrescreve (registro canônico R-12).
+        for m in self._memorias.list_for_chat(chat_id):
+            por_chave[m.chave] = m
+        for m in self._memorias.list_for_titular(titular_id):
+            por_chave[m.chave] = m
+        return sorted(por_chave.values(), key=lambda m: m.chave)
+
+    def put(
+        self, chat_id: str, chave: str, valor: object, titular_id: uuid.UUID | None = None
+    ) -> MemoriaConversa:
         try:
-            salvo = self._memorias.upsert(chat_id, chave, valor)
+            salvo = self._memorias.upsert(chat_id, chave, valor, titular_id)
             self._uow.commit()
         except Exception:
             self._uow.rollback()
@@ -633,6 +658,10 @@ class ProactiveService:
             if bairro:
                 cidade, uf = self._regiao_do_bairro(titular, bairro)
                 self._interrupcoes.encerrar(bairro, cidade, uf, now)
+        elif (tipo, subtipo) == ("pagamento", "lembrete"):
+            # R-16 / SPEC-026: lembrete é puramente informativo — NÃO muta estado de
+            # domínio (não dá baixa, não vence fatura). NO-OP determinístico.
+            return
         else:
             return
         try:
@@ -641,15 +670,28 @@ class ProactiveService:
             self._uow.rollback()
             raise
 
+    def _resolver_titular_id(self, telefone: str) -> uuid.UUID | None:
+        """Telefone do evento -> titular_id (R-12 / SPEC-027), tolerante ao 9º dígito.
+        Best-effort: telefone não cadastrado -> None (memória ainda grava por chat_id)."""
+        titular = self._titulares.find_by_phone_em(
+            variantes_nono_digito(normalizar_msisdn(telefone))
+        )
+        return titular.id if titular is not None else None
+
     def processar(self, evento: EventoCX) -> dict[str, object]:
-        """Worker: render determinístico -> envia (Omni) -> grava na memória."""
+        """Worker: render determinístico -> envia (Omni) -> grava na memória.
+
+        A memória é chaveada por titular_id (R-12): resolve o titular pelo telefone do
+        evento e propaga ao upsert, mantendo o chat_id como chave de escrita/legado."""
         texto = render_notificacao(evento)
         enviado = self._sender.send_text(evento.chat_id, texto)
+        titular_id = self._resolver_titular_id(evento.telefone)
         try:
             self._memorias.upsert(
                 evento.chat_id, evento.memoria_chave,
                 {"texto": texto, "em": self._clock().isoformat(), "dados": evento.dados,
                  "idempotency_key": evento.idempotency_key},
+                titular_id,
             )
             self._uow.commit()
         except Exception:
@@ -690,3 +732,120 @@ class ProactiveService:
             "encontrado": True, "titular": titular.nome, "telefone": normalizado.value,
             "pagamentos": pagamentos, "outages": outages,
         }
+
+
+class ProactiveReminderService:
+    """Lembrete proativo de vencimento D-3/D-0 (R-16 / SPEC-026). DETERMINÍSTICO, sem LLM.
+
+    Roda num cron/entrypoint próprio de backend (não no worker, que só consome
+    `utilitycx.>`): varre faturas em aberto/vencida cujo vencimento cai em D-3 ou D-0
+    relativo a `hoje` (data local America/São_Paulo, injetada) e publica um evento
+    `utilitycx.pagamento.lembrete` por match elegível. O worker existente renderiza o
+    template canônico, envia pelo Omni (best-effort) e grava em conversation_memory.
+
+    Idempotência por (fatura_id, dia): grava primeiro um marcador insert-only na
+    memória (`on_conflict_do_nothing`) com a chave dia-escopada; só publica quando o
+    marcador é novo. Assim o cron pode reexecutar sem duplicar lembretes."""
+
+    # Offsets (em dias) a partir de hoje em que se lembra o vencimento. D-3 e D-0.
+    OFFSETS_LEMBRETE: tuple[int, ...] = (3, 0)
+    STATUS_LEMBRAVEIS: tuple[str, ...] = ("em_aberto", "vencida")
+
+    def __init__(
+        self,
+        bus: EventBus,
+        memorias: MemoriaRepository,
+        titulares: TitularRepository,
+        faturas: FaturaRepository,
+        uow: UnitOfWork,
+        clock: Clock | None = None,
+    ) -> None:
+        self._bus = bus
+        self._memorias = memorias
+        self._titulares = titulares
+        self._faturas = faturas
+        self._uow = uow
+        self._clock: Clock = clock or _utcnow
+
+    @staticmethod
+    def _idempotency_key(fatura_id: uuid.UUID, dia: dt.date) -> str:
+        return f"pagamento.lembrete.{fatura_id}.{dia.isoformat()}"
+
+    @staticmethod
+    def _memoria_chave(fatura_id: uuid.UUID, dia: dt.date) -> str:
+        """Chave dia-escopada do marcador de idempotência (não colide com a memória
+        de notificação `proativo.pagamento.lembrete` gravada pelo worker)."""
+        return f"proativo.pagamento.lembrete.{fatura_id}.{dia.isoformat()}"
+
+    def varrer(self, hoje: dt.date | None = None) -> dict[str, object]:
+        """Varre as faturas elegíveis e dispara os lembretes D-3/D-0 de `hoje`.
+
+        `hoje` é a data local (São Paulo); se omitida, deriva do clock. Idempotente:
+        reexecutar no mesmo dia não republica. Determinístico (ordena por telefone+
+        fatura) e best-effort por titular (uma falha não interrompe a varredura)."""
+        ref = hoje or self._clock().date()
+        # mapeia data_de_vencimento -> dias_para_vencer, para casar D-3/D-0.
+        alvos = {ref + dt.timedelta(days=off): off for off in self.OFFSETS_LEMBRETE}
+        publicados: list[dict[str, object]] = []
+        for titular in sorted(self._titulares.list_all(), key=lambda t: t.telefone.value):
+            for fatura, uc_numero in self._faturas_lembraveis(titular):
+                dias = alvos.get(fatura.vencimento)
+                if dias is None:
+                    continue
+                if self._disparar_lembrete(titular, fatura, uc_numero, dias, ref):
+                    publicados.append({
+                        "fatura_id": str(fatura.id),
+                        "telefone": titular.telefone.value,
+                        "dias_para_vencer": dias,
+                    })
+        return {"data": ref.isoformat(), "lembretes": publicados, "total": len(publicados)}
+
+    def _faturas_lembraveis(
+        self, titular: Titular
+    ) -> list[tuple[Fatura, str]]:
+        out: list[tuple[Fatura, str]] = []
+        for c in self._titulares.list_contratos(titular.id):
+            uc = c.unidade
+            for f in self._faturas.list_for_unidade(uc.id, None, 24):
+                if f.status in self.STATUS_LEMBRAVEIS:
+                    out.append((f, uc.numero_uc))
+        return out
+
+    def _disparar_lembrete(
+        self, titular: Titular, fatura: Fatura, uc_numero: str, dias: int, dia: dt.date
+    ) -> bool:
+        """Guarda de idempotência (insert-only) -> publica o evento. Devolve True se
+        publicou (marcador novo), False se já lembrado neste dia."""
+        marcador = {
+            "fatura_id": str(fatura.id), "dia": dia.isoformat(), "dias_para_vencer": dias,
+        }
+        try:
+            novo = self._memorias.inserir_se_ausente(
+                titular.telefone.value,
+                self._memoria_chave(fatura.id, dia),
+                marcador,
+                titular.id,
+            )
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        if not novo:
+            return False
+        evento = EventoCX(
+            tipo="pagamento",
+            subtipo="lembrete",
+            telefone=titular.telefone.value,
+            nome=titular.nome,
+            idempotency_key=self._idempotency_key(fatura.id, dia),
+            dados={
+                "fatura_id": str(fatura.id),
+                "numero_uc": uc_numero,
+                "mes": fatura.mes_referencia,
+                "valor": fatura.valor.formatado(),
+                "vencimento": fatura.vencimento.isoformat(),
+                "dias_para_vencer": dias,
+            },
+        )
+        self._bus.publish(evento.subject, ProactiveService._payload(evento))
+        return True

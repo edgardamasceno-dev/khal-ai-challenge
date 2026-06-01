@@ -66,19 +66,19 @@ docker compose run --rm -e 'SEED_PERSONAS=Edgar Damasceno:5511999998888' seed
 
 ## 2. Subir a sandbox do agente (Omni/Genie) — determinístico
 
-A sandbox e isolada (ADR-0006): so alcanca o negocio via `mcp-server`. Build das imagens (uma vez):
+A sandbox e isolada (ADR-0006): so alcanca o negocio via `mcp-server`. A parte deterministica
+(vendorizar os clones pinados + build das 2 imagens + subir o overlay isolado) e **um comando**:
 
 ```bash
-docker build -f sandbox/Dockerfile -t khal-sandbox:base .
-docker build -t khal-egress-proxy sandbox/egress
+make sandbox-up
 ```
 
-Subir (sandbox + mcp na `mcpnet` + egress):
-
-```bash
-docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml \
-  up -d --force-recreate mcp-server egress-proxy sandbox
-```
+Encadeia: (1) `sandbox-libs` — vendoriza Omni/Genie em `sandbox/libs/` nos SHAs pinados
+(`genie@a407a2e2` / `omni@fe155b81`, clona so se faltar; nao-confiaveis, doc 07); (2) build de
+`khal-sandbox:base` (`docker build -f sandbox/Dockerfile -t khal-sandbox:base .`) e
+`khal-egress-proxy` (`docker build -t khal-egress-proxy sandbox/egress`); (3) `docker compose -f
+docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy
+sandbox`. Derrubar so o overlay: `make sandbox-down`.
 
 **Checagem de isolamento** (o sandbox so enxerga o MCP — guardrail de rede, ADR-0006/ADR-0017):
 

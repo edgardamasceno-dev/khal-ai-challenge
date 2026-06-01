@@ -4,25 +4,30 @@ Passo a passo reprodutível para colocar o agente CX `luz-do-vale` atendendo, do
 zero. As etapas **interativas** (login, QR) são suas; as **determinísticas**
 (subir stack, wiring, E2E interno) são automatizáveis.
 
-Pré-requisitos: Docker; imagem `khal-sandbox:base` buildada
-(`docker build -f sandbox/Dockerfile -t khal-sandbox:base .` a partir da raiz);
-imagem do egress (`docker build -t khal-egress-proxy sandbox/egress`).
+Pré-requisitos: Docker. A parte **determinística** (vendorizar os clones pinados de Omni/Genie
+em `sandbox/libs/`, buildar as imagens `khal-sandbox:base` e `khal-egress-proxy` + subir o
+overlay isolado) é encapsulada em **`make sandbox-up`** (Etapa 1) — inclusive o vendoring
+(`sandbox-libs`: clona se faltar e fixa em `genie@a407a2e2` / `omni@fe155b81`, doc 07).
+Equivalente manual: clones em `sandbox/libs/` (ver `sandbox/README.md`) +
+`docker build -f sandbox/Dockerfile -t khal-sandbox:base .` (a partir da raiz) +
+`docker build -t khal-egress-proxy sandbox/egress`.
 
 ---
 
 ## 1. Subir o stack (determinístico)
 
-A partir da raiz do repo (`implementation/`):
+A partir da raiz do repo (`implementation/`), um comando builda as imagens do sandbox
+e sobe o overlay isolado:
 
 ```bash
-docker compose \
-  -f docker-compose.yml \
-  -f sandbox/compose.sandbox.yml \
-  up -d --force-recreate mcp-server egress-proxy sandbox
+make sandbox-up
 ```
 
+Equivale a vendorizar `sandbox/libs/` (`make sandbox-libs`) + `docker build` das 2 imagens +
+`docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate
+mcp-server egress-proxy sandbox`.
 Sobe: `database`, `backend`, `mcp-server` (em `mcpnet`), `egress-proxy`, `sandbox`.
-O `sandbox` fica em `sleep infinity` (operador dirige os passos abaixo).
+O `sandbox` fica em `sleep infinity` (operador dirige os passos abaixo). Derrubar: `make sandbox-down`.
 
 **Checagem de isolamento** (o sandbox só enxerga o MCP):
 

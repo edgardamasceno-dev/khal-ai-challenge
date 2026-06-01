@@ -106,8 +106,11 @@ jobs:
     name: Eval gate (>= 85)
     needs: quality
     runs-on: ubuntu-latest
-    # So roda em PR do proprio repo (nao-fork); sem ANTHROPIC_API_KEY o job da SKIP limpo.
-    if: ${{ github.event.pull_request.head.repo.fork == false }}
+    # DESABILITADO por padrao (`if: false`) — mantido como EVIDENCIA de que o CI foi
+    # desenhado com um gate de eval bloqueante (>= 85). Depende de ANTHROPIC_API_KEY +
+    # do stack no ar (custo/credito). Para ativar: adicionar o secret ANTHROPIC_API_KEY e
+    # trocar a guarda abaixo por `if: ${{ github.event.pull_request.head.repo.fork == false }}`.
+    if: false
 
     steps:
       - name: Verifica disponibilidade do segredo

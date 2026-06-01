@@ -81,12 +81,12 @@ _CONTRACTS: dict[str, list[dict[str, Any]]] = {
 }
 
 
-def _inv(uc: str, mes: str, status: str) -> dict[str, Any]:
+def _inv(uc: str, mes: str, status: str, consumo_kwh: int = 200) -> dict[str, Any]:
     return {
         "id": f"F-{uc}-{mes}",
         "uc_id": uc,
         "mes_referencia": mes,
-        "consumo_kwh": 200,
+        "consumo_kwh": consumo_kwh,
         "valor_centavos": 19000,
         "valor_formatado": "R$ 190.00",
         "bandeira": "amarela",
@@ -97,9 +97,39 @@ def _inv(uc: str, mes: str, status: str) -> dict[str, Any]:
     }
 
 
+def _meses_ate(ano_fim: int, mes_fim: int, total: int) -> list[str]:
+    """Gera `total` 'YYYY-MM' terminando em (ano_fim, mes_fim), do mais antigo
+    para o mais recente — base do historico de ~24 meses dos insights (R-17)."""
+    meses: list[str] = []
+    ano, mes = ano_fim, mes_fim
+    for _ in range(total):
+        meses.append(f"{ano:04d}-{mes:02d}")
+        mes -= 1
+        if mes == 0:
+            mes, ano = 12, ano - 1
+    return list(reversed(meses))
+
+
+# Historico de ~24 meses da Ana (UC-ANA), determinIstico, para os insights (R-17):
+# - consumo cresce ~5 kWh/mes (tendencia 'subindo' nos ultimos meses);
+# - pico claro e isolado em 2025-07 (590 kWh) — verao, sazonalidade;
+# - 2026-05 fica em_aberto (preserva os testes de invoice/pdf existentes);
+# - YoY casavel: 2025-05 existe no historico para comparar com 2026-05.
+def _historico_ana() -> list[dict[str, Any]]:
+    meses = _meses_ate(2026, 5, 24)  # 2024-06 .. 2026-05
+    faturas: list[dict[str, Any]] = []
+    for i, mes in enumerate(meses):
+        consumo = 150 + i * 5  # base crescente
+        if mes == "2025-07":
+            consumo = 590  # pico isolado de verao
+        status = "em_aberto" if mes == "2026-05" else "paga"
+        faturas.append(_inv("UC-ANA", mes, status, consumo))
+    return faturas
+
+
 _INVOICES: dict[str, list[dict[str, Any]]] = {
-    "UC-ANA": [_inv("UC-ANA", "2026-05", "em_aberto"), _inv("UC-ANA", "2026-03", "paga")],
-    "UC-CARLOS": [_inv("UC-CARLOS", "2026-05", "paga")],  # sem faturas em aberto
+    "UC-ANA": _historico_ana(),
+    "UC-CARLOS": [_inv("UC-CARLOS", "2026-05", "paga", 800)],  # 1 mes: sem tendencia/YoY
 }
 
 

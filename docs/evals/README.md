@@ -62,6 +62,36 @@ persona os justifica. No default Ana/Carlos/Joana isso rende J9 para Ana+Joana
 > (`get_invoice_status`, `list_contracts`, `generate_invoice_pdf`) e exige texto de
 > recuperação empática/escala (`atendente`, `ajudar`, `cadastro`).
 
+### Jornadas da Onda B (R-17 / M-03 / R-16 — SPEC-025 / SPEC-026)
+
+Novos cenários focados em **tool-call**, no mesmo padrão das demais (data-driven com
+gating por perfil + fixos na persona primária). Cobrem a 12ª tool de insights, a
+degradação graciosa do backend e o reconhecimento do lembrete proativo.
+
+| Jornada | Persona / gating | Verifica | Dependência |
+|---|---|---|---|
+| J15-insights-consumo | persona com fatura (`uma_aberta`/`uma_vencida`) | `find_customer_by_phone` + **`get_consumption_insights`** (12ª tool, R-17/SPEC-025), **não** abre ticket, fala de consumo/tendência/pico — prova que o tool-scope autoriza a tool de insights e que o agente a usa em vez de inventar números | stack |
+| cliente-desconhecido-insights | (fora do registry) | guardrail por titular na tool de insights: para um telefone alheio **não** vaza dados de conta (`get_invoice_status`/`list_contracts`/`generate_invoice_pdf`), **não inventa** média/pico em kWh e oferece recuperação empática (R-17 + M-03) | stack |
+| J16-degradacao-backend | Ana (primária) | **backend indisponível** → tools degradam com **erro tipado** (shape amigável `{'erro': 'instabilidade'}`, **sem stacktrace**); o agente **não alucina** (não fabrica status/valor de fatura) e oferece retry/`request_human_handoff` (M-03) | **fault-injection** (backend derrubado / `mcp.config` p/ erro) |
+| J17-lembrete-vencimento | Ana (primária) | após o lembrete proativo **D-3/D-0** (evento `utilitycx.pagamento.lembrete` gravado em `conversation_memory` pelo worker determinístico, R-16/SPEC-026), o cliente volta e o agente **lê o evento** via **`get_account_events`**, reconhece o lembrete e **não** reabre chamado nem reenvia | **seed de memória** do lembrete no DB de eval |
+
+> **J15 vs. data-driven**: o cenário de insights só é gerado quando o perfil da persona
+> tem fatura (`uma_aberta`/`uma_vencida`) — espelha o gating de **J9**, pois quem tem
+> fatura tem o histórico de ~24 meses do seed sobre o qual `get_consumption_insights`
+> calcula média/tendência/sazonalidade/pico (determinístico, sem LLM). No default rende
+> J15 para **Ana** (vencida) e **Joana** (corte/religação com fatura).
+
+> **J16 vs. J13**: ambos cobrem erro de tool, mas com focos distintos. **J13** valida a
+> política de recuperação empática (M-02, lado prompt). **J16** valida o invariante de
+> **degradação graciosa** (M-03, lado infra): com o erro **tipado** vindo da tool, o
+> agente **não fabrica** um estado concreto de fatura ("está em aberto", "valor é R$…")
+> e **não vaza** detalhe técnico (`timeout`, `httpx`, `connection refused`, `500`).
+
+> **Dependências de stack (Onda B)**: J16 exige **fault-injection** (mesmo mecanismo do
+> J13) e J17 exige **memória semeada** do lembrete (fixture, mesma infra de J10b). J15 e
+> `cliente-desconhecido-insights` rodam contra o stack normal. Todas as asserções
+> continuam **puras** (`harness.py`) e testáveis sem LLM (ver `test_journeys_dynamic.py`).
+
 > **Dependências de stack**: J10b exige **memória semeada** (fixture), J13 exige
 > **fault-injection** e J14 exige **transcrição semeada** no Omni; ficam marcados como
 > dependentes dessa infra. O J10 básico (tool-call de abertura, `get_account_events`) e os

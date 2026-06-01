@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +14,9 @@ class MemoriaConversa:
     chave: str
     valor: Any
     atualizado_em: dt.datetime
+    # R-12: chave lógica primária da memória. `None` em registros legados gravados
+    # antes do backfill (lidos via fallback por chat_id). Ver SPEC-027 / ADR-0013.
+    titular_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)

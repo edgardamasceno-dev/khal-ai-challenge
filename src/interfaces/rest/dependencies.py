@@ -19,6 +19,7 @@ from src.application.services import (
     MemoryService,
     OperatorChatService,
     OutageService,
+    ProactiveReminderService,
     ProactiveService,
     TicketingService,
 )
@@ -156,5 +157,19 @@ def get_proactive_service(session: Session = Depends(get_session)) -> ProactiveS
         SqlTitularRepository(session),
         SqlFaturaRepository(session),
         SqlInterrupcaoRepository(session),
+        SqlAlchemyUnitOfWork(session),
+    )
+
+
+def get_proactive_reminder_service(
+    session: Session = Depends(get_session),
+) -> ProactiveReminderService:
+    # R-16 / SPEC-026: cron de lembrete D-3/D-0. Sem sender/Omni aqui — só publica no
+    # bus; o worker (utilitycx.>) notifica. O entrypoint dedicado é events/reminder.py.
+    return ProactiveReminderService(
+        NatsEventBus(settings.nats_url),
+        SqlMemoriaRepository(session),
+        SqlTitularRepository(session),
+        SqlFaturaRepository(session),
         SqlAlchemyUnitOfWork(session),
     )

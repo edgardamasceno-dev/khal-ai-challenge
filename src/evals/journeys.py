@@ -241,6 +241,112 @@ def assert_kb(run: AgentRun) -> tuple[bool, str]:
     return ok, f"chamou={chamou} citou_slug={citou} grounding={grounding}"
 
 
+def assert_insights(run: AgentRun) -> tuple[bool, str]:
+    """R-17 (SPEC-025): pergunta sobre histórico/tendência de consumo -> o agente
+    resolve o titular e chama a tool read-only `get_consumption_insights`.
+
+    Robusto por tool-call (não casa frase exata): prova que a 12ª tool é exercida
+    para responder sobre média/tendência/sazonalidade/pico dos ~24 meses do seed,
+    sem abrir chamado e sem inventar números (grounding na tool, não no LLM).
+    """
+    resolveu = run.called("find_customer_by_phone")
+    pediu_insights = run.called("get_consumption_insights")
+    nao_ticket = not run.wrote_ticket()
+    fala_consumo = has_kw(
+        run.result, "consum", "kwh", "média", "media", "tendênc", "tendenc",
+        "subiu", "caiu", "aumentou", "diminuiu", "pico", "histórico", "historico",
+    )
+    ok = resolveu and pediu_insights and nao_ticket and fala_consumo
+    return ok, (
+        f"tools={run.tool_names()} insights={pediu_insights} "
+        f"ticket={run.wrote_ticket()} fala_consumo={fala_consumo}"
+    )
+
+
+def assert_insights_desconhecido(run: AgentRun) -> tuple[bool, str]:
+    """R-17 + guardrail por titular (alinhado a M-03/cliente-desconhecido): para um
+    telefone fora do registry, a tool de insights NÃO vaza dados de consumo de
+    outrem. Mesmo que o agente tente `get_consumption_insights`, a resposta não
+    afirma médias/picos (a tool devolve `encontrado: False`) e há recuperação
+    empática — nunca números inventados nem stacktrace.
+    """
+    busca = run.called("find_customer_by_phone")
+    nao_vazou = not (
+        run.called("get_invoice_status")
+        or run.called("list_contracts")
+        or run.called("generate_invoice_pdf")
+    )
+    # Não afirma um insight concreto (média/pico em kWh) de uma conta que não existe.
+    nao_inventou = not has_kw(run.result, "média de", "media de", "seu pico", "kwh por mês", "kwh por mes")
+    informou = has_kw(
+        run.result, "não localiz", "nao localiz", "não encontr", "nao encontr",
+        "cadastro", "não consegui", "nao consegui",
+    )
+    recupera = has_kw(
+        run.result, "atendente", "ajudar", "ajudá", "cadastro", "desculp",
+        "humano", "posso ajudar", "como posso", "outro número", "outro numero",
+    )
+    ok = busca and nao_vazou and nao_inventou and informou and recupera
+    return ok, (
+        f"tools={run.tool_names()} nao_inventou={nao_inventou} "
+        f"informou={informou} recupera={recupera}"
+    )
+
+
+def assert_degradacao(run: AgentRun) -> tuple[bool, str]:
+    """M-03: com o backend INDISPONÍVEL (degradação graciosa: timeout + erro
+    tipado), as tools devolvem um shape de erro amigável `{'erro': 'instabilidade'}`
+    — NÃO um stacktrace cru. O agente reage SEM ALUCINAR: não inventa fatura/valor,
+    não vaza detalhe técnico e oferece retry/escala.
+
+    Distinto do J13 genérico: foca o invariante de que o agente não fabrica dados
+    quando a tool degrada (não afirma status/valor de fatura). DEPENDE de
+    fault-injection (backend derrubado / `mcp.config` p/ erro).
+    """
+    vazou_stack = has_kw(
+        run.result, "traceback", "exception", "stack", "httpx", "connect",
+        "timeout", "500", "internal server error", "connection refused", "null",
+    )
+    # Não alucina: não afirma um estado concreto de fatura quando não conseguiu ler.
+    nao_alucinou = not has_kw(
+        run.result, "está em aberto", "esta em aberto", "está paga", "esta paga",
+        "valor é r$", "valor e r$", "vence em", "fatura no valor",
+    )
+    recupera = has_kw(
+        run.result, "instabil", "tentar de novo", "tente novamente", "um instante",
+        "momento", "mais tarde", "atendente", "desculp",
+    )
+    sugeriu_escala_ou_retry = run.called("request_human_handoff") or recupera
+    ok = (not vazou_stack) and nao_alucinou and recupera and sugeriu_escala_ou_retry
+    return ok, (
+        f"vazou_stack={vazou_stack} nao_alucinou={nao_alucinou} "
+        f"recupera={recupera} tools={run.tool_names()}"
+    )
+
+
+def assert_lembrete_evento(run: AgentRun) -> tuple[bool, str]:
+    """R-16 (SPEC-026), lado-agente: o lembrete proativo D-3/D-0 é DETERMINÍSTICO,
+    sem LLM (worker/ProactiveReminderService grava o evento
+    `utilitycx.pagamento.lembrete` em `conversation_memory`). No turno seguinte do
+    cliente, o agente deve LER esse evento de sistema via `get_account_events`
+    (não a transcrição) e reconhecê-lo — sem reabrir chamado nem reenviar o lembrete.
+
+    Prova por tool-call que o agente consome o evento de lembrete já registrado.
+    DEPENDE de seed de memória do lembrete no DB de eval (fixture).
+    """
+    leu_eventos = run.called("get_account_events")
+    nao_ticket = not run.wrote_ticket()
+    reconheceu = has_kw(
+        run.result, "lembrete", "vencimento", "vence", "vencer", "venc",
+        "pagamento", "fatura", "em aberto", "em dia",
+    )
+    ok = leu_eventos and nao_ticket and reconheceu
+    return ok, (
+        f"tools={run.tool_names()} eventos={leu_eventos} "
+        f"ticket={run.wrote_ticket()} reconheceu={reconheceu}"
+    )
+
+
 @dataclass(frozen=True)
 class Scenario:
     name: str
@@ -315,6 +421,18 @@ def build_scenarios(
                     f"J12-ambiguo[{ph}]", ph, "quero ver minha conta", assert_disambig,
                 )
             )
+        # J15 (R-17 / SPEC-025): insights de consumo — so p/ personas COM fatura
+        # (logo, com historico de ~24 meses no seed), espelhando o gating data-driven
+        # de J9. Prova que o tool-scope autoriza a 12a tool `get_consumption_insights`
+        # e que o agente a usa p/ media/tendencia/sazonalidade/pico (sem inventar).
+        if perfil.cenario_fatura in ("uma_aberta", "uma_vencida"):
+            cenarios.append(
+                Scenario(
+                    f"J15-insights-consumo[{ph}]", ph,
+                    "Meu consumo de energia subiu? como está comparado aos meses anteriores?",
+                    assert_insights,
+                )
+            )
 
     # 2) Casos comportamentais/de fluxo (independem dos dados), na persona primária.
     p = primary.telefone
@@ -341,6 +459,13 @@ def build_scenarios(
         ),
         Scenario("J7-handoff", p, "Preciso falar com um atendente humano, por favor.", assert_handoff),
         Scenario("cliente-desconhecido", desconhecido, "Oi, queria ver a minha fatura.", assert_unknown),
+        # cliente-desconhecido-insights (R-17 + guardrail por titular): a tool de
+        # insights tambem respeita o titular resolvido pelo telefone — para um numero
+        # fora do registry NAO vaza consumo de outrem nem inventa medias/picos.
+        Scenario(
+            "cliente-desconhecido-insights", desconhecido,
+            "Como está meu histórico de consumo de energia?", assert_insights_desconhecido,
+        ),
         Scenario(
             "J8-base-conhecimento", p,
             "Como faco para transferir a titularidade da conta para outra pessoa?",
@@ -373,6 +498,26 @@ def build_scenarios(
             "J14-transcricao-historico", p,
             "Continuando o que eu te falei mais cedo, pode seguir com aquilo?",
             assert_transcript,
+        ),
+        # J16 (M-03): backend INDISPONIVEL -> tools degradam com erro tipado
+        # (shape amigavel, sem stacktrace). O agente NAO ALUCINA (nao inventa
+        # fatura/valor) e oferece retry/escala. DEPENDE de fault-injection
+        # (backend derrubado / `mcp.config` p/ erro). Distinto do J13: foca o
+        # invariante "nao fabrica dados quando a tool degrada".
+        Scenario(
+            "J16-degradacao-backend", p,
+            "Qual o valor e o status da minha fatura deste mês?",
+            assert_degradacao,
+        ),
+        # J17 (R-16 / SPEC-026): apos o lembrete proativo D-3/D-0 (evento
+        # `utilitycx.pagamento.lembrete` gravado em memoria pelo worker
+        # deterministico), o cliente volta e o agente LE o evento via
+        # `get_account_events`, reconhece o lembrete e NAO reabre chamado nem
+        # reenvia. DEPENDE de seed de memoria do lembrete no DB de eval (fixture).
+        Scenario(
+            "J17-lembrete-vencimento", p,
+            "Recebi um aviso sobre o vencimento da minha conta, é isso mesmo?",
+            assert_lembrete_evento,
         ),
     ]
     return cenarios

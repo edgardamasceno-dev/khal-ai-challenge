@@ -191,12 +191,38 @@ class TestTicketingApi:
 
 class TestConversationApi:
     def test_memoria_put_get_upsert(self, ctx: SimpleNamespace) -> None:
+        # Telefone NÃO cadastrado: fallback puro por chat_id (comportamento legado).
         chat = "5511999990001@s.whatsapp.net"
         r1 = ctx.client.put(f"/conversations/{chat}/memory", json={"chave": "k", "valor": {"v": 1}})
         assert r1.status_code == 200
         ctx.client.put(f"/conversations/{chat}/memory", json={"chave": "k", "valor": {"v": 2}})
         mem = ctx.client.get(f"/conversations/{chat}/memory").json()
         assert len(mem) == 1 and mem[0]["valor"] == {"v": 2}
+
+    def test_memoria_titular_resolvido_une_titular_e_chat(self, ctx: SimpleNamespace) -> None:
+        # R-12 / SPEC-027: para a Ana (cadastrada), a GET devolve a UNIÃO dos eventos do
+        # titular inteiro + do chat, deduplicada por chave — desfragmenta multi-UC/LID.
+        ana = "555199990001"
+        # grava por uma variante (com 9) que casa Ana: o PUT popula titular_id.
+        ctx.client.put(
+            "/conversations/5551999990001/memory",
+            json={"chave": "proativo.pagamento.confirmado", "valor": {"v": 1}},
+        )
+        # grava direto pelo telefone canônico, chave distinta.
+        ctx.client.put(
+            f"/conversations/{ana}/memory",
+            json={"chave": "ultimo_protocolo", "valor": {"p": "LDV1"}},
+        )
+        mem = ctx.client.get(f"/conversations/{ana}/memory").json()
+        chaves = {m["chave"] for m in mem}
+        # a GET pelo canônico enxerga AMBOS (titular + chat), mesmo o gravado por outra variante.
+        assert "proativo.pagamento.confirmado" in chaves
+        assert "ultimo_protocolo" in chaves
+
+    def test_memoria_get_telefone_desconhecido_nao_quebra(self, ctx: SimpleNamespace) -> None:
+        # Cliente desconhecido: sem titular -> fallback por chat, sem erro.
+        r = ctx.client.get("/conversations/550000000000/memory")
+        assert r.status_code == 200 and r.json() == []
 
 
 class TestKnowledgeApi:

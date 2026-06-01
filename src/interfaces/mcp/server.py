@@ -149,5 +149,40 @@ def get_chat_history(phone: str) -> dict[str, Any]:
     return _tools.get_chat_history(phone)
 
 
+@mcp.tool()
+def get_consumption_insights(phone: str) -> dict[str, Any]:
+    """Insights de consumo (kWh) do titular sobre ~24 meses (read-only) pelo telefone.
+
+    Sumariza o historico de faturas: media mensal, tendencia (subindo/estavel/caindo),
+    variacao do ultimo mes vs media, pico de consumo e comparativo sazonal ano-a-ano —
+    por unidade consumidora. Calculo deterministico (sem LLM), sem mutacao. Use quando o
+    cliente pergunta 'por que minha conta subiu', 'quanto gastei', 'meu consumo aumentou'.
+    Backend instavel -> {'encontrado': False, 'erro': 'instabilidade'} (sem stacktrace).
+    """
+    return _tools.get_consumption_insights(phone)
+
+
+def build_app() -> Any:
+    """Constroi o app ASGI (Starlette) do transporte streamable-HTTP com o
+    middleware de traceId montado (R-10).
+
+    Fronteira de observabilidade ponta-a-ponta: o `TraceIdMiddleware` le o header
+    de trace da requisicao /mcp (`x-trace-id`, com fallback W3C) e o publica num
+    ContextVar; o RECORDER do `AuditedCxTools` o le no momento de cada tool-call e
+    grava em `tool_call_audit.trace_id` — sem tocar a assinatura de nenhuma tool.
+    Import tardio do middleware mantem o modulo carregavel sem Starlette no path
+    de quem so introspecta o registro de tools (ex.: teste de paridade)."""
+    from src.interfaces.mcp.trace import TraceIdMiddleware
+
+    app = mcp.streamable_http_app()
+    app.add_middleware(TraceIdMiddleware)
+    return app
+
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    import uvicorn
+
+    # R-10: subimos o app explicitamente (em vez de mcp.run) para montar o
+    # TraceIdMiddleware sobre o transporte streamable-HTTP. host/port espelham o
+    # FastMCP("luz-do-vale", host=..., port=...) configurado acima.
+    uvicorn.run(build_app(), host=mcp.settings.host, port=mcp.settings.port)

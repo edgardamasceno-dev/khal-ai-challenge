@@ -11,7 +11,13 @@ make sandbox-up       # 1. determinístico  — vendor + build + overlay isolado
 make sandbox-login    # 2. INTERATIVO (você) — claude login (device-flow, persiste no volume)
 make sandbox-serve    # 3+4. determinístico — wiring do agente + daemons (NATS/Omni/genie serve)
 make sandbox-smoke    # 5. determinístico  — self-test: prova NATS→bridge→agente→MCP (exit≠0 se falhar)
-# 6. WhatsApp real (INTERATIVO, 2 celulares) — ver Etapa 6 abaixo.   Derrubar tudo: make sandbox-down
+# 6. WhatsApp real (precisa de 2 celulares: bot + cliente):
+make sandbox-wanet                          # 6.0 rede direta p/ o Baileys (negócio segue bloqueado)
+make sandbox-pair PHONE=+<DDI><bot>         # 6.1+6.2 → você digita o código no celular do BOT
+make sandbox-connect                        # 6.3 liga a instância ao agente
+#   -> mande 1 msg do celular CLIENTE p/ o bot
+make sandbox-reseed                         # 6.4 auto-detecta o LID e re-chaveia a persona
+#   -> mande a msg real do CLIENTE -> resposta chega no WhatsApp (6.5).   Derrubar tudo: make sandbox-down
 ```
 
 > `make sandbox-up` recria o container, mas o login (volume `claude-home`) e o pgdata do Genie
@@ -203,58 +209,43 @@ Equivalente manual: `docker network create khal-wanet` + `docker network connect
 khal-sandbox` + os `curl --noproxy "*"` de validação (web.whatsapp.com alcança; backend/database
 seguem `000` = bloqueados).
 
-### 6.1 Autentica o CLI do omni
-
-A API gera uma key a cada start (pgserve do omni é efêmero). Pegue do log e logue:
+### 6.1 + 6.2 — Autentica + cria a instância + gera o pairing code
 
 ```bash
-KEY=$(docker exec khal-sandbox sh -c 'grep -oE "omni_sk_[A-Za-z0-9]+" /tmp/omni-api.log | head -1')
-docker exec khal-sandbox sh -c "cd /srv/omni && omni auth login --api-key $KEY"
+make sandbox-pair PHONE=+<DDI><numero-do-bot>      # ex.: PHONE=+16472015092
 ```
 
-### 6.2 Cria a instância e parea (pairing code — mais robusto que o QR rotativo)
+Faz toda a cola CLI: omni auth (key efêmera do log) + cria/reusa a instância `luzdovale-bot`
++ conecta o Baileys + imprime o **pairing code** de 8 chars (mais robusto que o QR rotativo).
+**Sua única ação física:** digite o código no celular do **bot** — WhatsApp → Aparelhos
+conectados → Conectar um aparelho → **"Conectar com número de telefone"**. Expira em ~60s;
+se expirar, rode `make sandbox-pair PHONE=…` de novo (idempotente, reusa a instância).
+
+Equivalente manual: `omni auth login --api-key <key do /tmp/omni-api.log>` + `omni instances
+create --name luzdovale-bot --channel whatsapp-baileys` + `omni instances connect <id>` +
+`omni instances pair <id> --phone +<DDI><numero>`.
+
+### 6.3 — Liga a instância ao agente
 
 ```bash
-ID=$(docker exec khal-sandbox sh -c 'cd /srv/omni && omni instances create \
-  --name luzdovale-bot --channel whatsapp-baileys 2>/dev/null' | grep -oE "[0-9a-f-]{36}" | head -1)
-docker exec khal-sandbox sh -c "cd /srv/omni && omni instances connect $ID"
-sleep 4
-# código de 8 chars p/ o número do BOT (com DDI):
-docker exec khal-sandbox sh -c "cd /srv/omni && omni instances pair $ID --phone +1XXXXXXXXXX"
+make sandbox-connect
 ```
 
-No celular do **bot**: WhatsApp → Aparelhos conectados → Conectar um aparelho →
-**"Conectar com número de telefone"** → digite o código. (Alternativa: QR ASCII com
-`omni instances qr $ID`, mas roda a cada ~20s — o código é mais confiável.)
+Resolve o instance-ID pelo nome e roda `omni connect <id> luz-do-vale` (com as envs
+force-TCP do postgres do genie). Pré-req: você já pareou o código (status `connected`).
+
+### 6.4 — LID: re-chaveia o cliente pelo identificador que o WhatsApp envia
+
+O WhatsApp manda um **LID** (`<dígitos>@lid`), **não** o telefone E.164 — então
+`find_customer_by_phone` (casa por dígitos do telefone) não acha o cliente. Mande **uma**
+mensagem do celular cliente para o bot e rode:
 
 ```bash
-docker exec khal-sandbox sh -c "cd /srv/omni && omni instances status $ID"   # -> connected
+make sandbox-reseed        # auto-detecta o LID do log e re-chaveia a persona do .env
+#  override explícito:  make sandbox-reseed LID=<digitos>
 ```
 
-### 6.3 Liga a instância ao agente (com env force-TCP do genie)
-
-O `omni connect` descobre o agente no diretório do genie via pgserve — passe as
-envs force-TCP (nosso genie roda assim):
-
-```bash
-docker exec khal-sandbox sh -c "cd /srv/omni && \
-  GENIE_PG_FORCE_TCP=1 GENIE_PG_PORT=19642 GENIE_DB_NAME=genie PGPASSWORD=postgres \
-  omni connect $ID luz-do-vale"
-```
-
-### 6.4 LID: chaveie o cliente pelo identificador que o WhatsApp envia
-
-O WhatsApp manda um **LID** (`<digitos>@lid`), **não** o telefone E.164. Descubra o
-LID do cliente (mande uma msg dele e veja o `from`/`chatId` em `/tmp/omni-api.log`)
-e re-seede a persona chaveada por esse LID (perfil rico por ser persona única):
-
-```bash
-# ex.: LID 87866608713902
-docker compose -f docker-compose.yml run --rm \
-  -e 'SEED_PERSONAS=Edgar Damasceno:87866608713902' seed
-```
-
-> Adaptação de demo. O ideal — resolver **LID→telefone** no omni (`chat_id_mappings`)
+> Adaptação de demo. O ideal — resolver **LID→telefone** no Omni (`chat_id_mappings`)
 > — fica como follow-up para usar o número E.164 real.
 
 ### 6.5 Teste e observe

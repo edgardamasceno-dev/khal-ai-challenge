@@ -266,9 +266,15 @@ best-effort da SPEC-017) — o isolamento de rede do default (ADR-0006) fica int
 completa pela `bridge` (ver ADR-0010).
 
 ### Notas operacionais
-- **Auth do agente:** se o container foi **recriado** depois do `claude login`, refaça
-  `docker exec -it khal-sandbox claude login` (a sessão TUI do Claude Code atrela ao
-  container; o `claude -p` segue funcionando, mas o spawn TUI cai no OAuth).
+- **Auth do agente (recriação):** o token do `claude login` persiste no volume `claude-home`
+  (`~/.claude/.credentials.json`) e o `sandbox-up.sh` **re-marca o onboarding automaticamente**
+  no startup (passo 5b) — então após um `--force-recreate` o spawn TUI do agente volta a
+  funcionar **sem refazer login**. Só refaça `docker exec -it khal-sandbox claude login` se a
+  credencial em si expirou/sumiu (volume novo). Causa: a credencial fica no volume, mas o estado
+  de onboarding vive em `~/.claude.json` (arquivo irmão, **fora** do volume, resetado no recreate)
+  — daí o re-mark em runtime. Se mesmo assim o pane cair em "Select login method", limpe a sessão
+  obsoleta do chat (`delete from genie_bridge_sessions where chat_id=...` no PG do genie :19642) e
+  reinicie o `genie serve` — o spawn seguinte nasce limpo.
 - **Corrida do 1º spawn:** a 1ª mensagem de um chat cria a sessão e pode não entrar na
   TUI — reenvie. Se você matou janelas tmux no diagnóstico, limpe os resíduos de sessão:
   `delete from genie_bridge_sessions where chat_id ilike '%<lid>%'` (DB genie, `:19642`).

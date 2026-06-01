@@ -4,8 +4,13 @@
 - Data: 2026-05-30
 - Revisao: 2026-05-31 (R-03 / SPEC-022). A promessa de **injecao da memoria no turno pelo
   backend** e marcada como **superseded**; a leitura passa a ser cumprida por uma **tool MCP
-  read-only** (`get_conversation_context`). A escrita deterministica (worker/`ProactiveService`
-  em `utilitycx.*`) permanece **inalterada e valida**.
+  read-only** (`get_account_events`, originalmente `get_conversation_context`). A escrita
+  deterministica (worker/`ProactiveService` em `utilitycx.*`) permanece **inalterada e valida**.
+- Revisao: 2026-05-31 (ADR-0013 / SPEC-022). A tool de leitura e **renomeada** de
+  `get_conversation_context` para `get_account_events` para refletir que retorna **eventos
+  deterministicos de sistema** (nao a transcricao da conversa). Assinatura/retorno externos
+  inalterados — so muda o nome. A fronteira de memoria (transcricao Omni vs eventos desta store
+  vs sessao Genie) e a nova tool de transcricao `get_chat_history` ficam formalizadas no ADR-0013.
 
 ## Context
 
@@ -26,8 +31,9 @@ Eventos de dominio (`OutageOpened`, `PaymentRegistered`) sao publicados no NATS 
 > canal; a leitura fica no backend (REST / `MemoryService`), que injeta o contexto no turno"*.
 > Essa **injecao no backend nunca foi implementada** — o spawn do agente so passa o `AGENTS.md`
 > estatico, sem injetar a memoria do turno. **Decisao revista:** a leitura passa a ser cumprida
-> por uma **tool MCP read-only** `get_conversation_context(phone)` que o agente chama no
-> **abrir** da conversa (`find_customer_by_phone` **e** `get_conversation_context`, em paralelo).
+> por uma **tool MCP read-only** `get_account_events(phone)` (originalmente
+> `get_conversation_context`, renomeada pelo ADR-0013) que o agente chama no **abrir** da
+> conversa (`find_customer_by_phone` **e** `get_account_events`, em paralelo).
 > A tool resolve o titular **sempre** pelo telefone do remetente e le **apenas** a memoria do
 > proprio titular, sob o **mesmo guardrail de acesso por telefone** das demais tools (auditada
 > por `AuditedCxTools`, ADR-0012). Assim o agente sabe, por exemplo, que a fatura ja foi paga —
@@ -60,7 +66,7 @@ Negativas:
 - **(revisao 2026-05-31)** A leitura depende do agente **chamar** a tool no abrir da conversa
   (regra de prompt no `AGENTS.md`), e nao mais de uma injecao garantida pelo backend. Mitigado
   por: (a) regra explicita de abertura no `AGENTS.md`; (b) cenarios de eval que exigem a chamada
-  de `get_conversation_context` no 1o turno (R-03); (c) guardrail deterministico no codigo da
+  de `get_account_events` no 1o turno (R-03); (c) guardrail deterministico no codigo da
   tool, independente do prompt.
 
 ## Notes

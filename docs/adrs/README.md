@@ -16,5 +16,6 @@ Decisoes arquiteturais relevantes desta entrega. Cada ADR e imutavel; mudancas v
 | [0010](./ADR-0010-media-egress-optin.md) | Rota direta de midia opt-in (anexo no WhatsApp vs egress isolado) | Accepted |
 | [0011](./ADR-0011-personas-canonicas-deterministicas.md) | Personas canonicas com cenario fixo por nome (overlay deterministico) | Accepted |
 | [0012](./ADR-0012-auditoria-observabilidade-tool-call.md) | Auditoria e observabilidade por tool-call MCP (best-effort, PII mascarada) | Accepted |
+| [0013](./ADR-0013-fronteira-memoria-transcricao-eventos-sessao.md) | Fronteira de memoria do agente: transcricao (Omni) vs eventos de sistema (`conversation_memory`) vs sessao (Genie) — duas tools read-only | Accepted |
 
 Formato: Context, Decision, Consequences, Alternatives.

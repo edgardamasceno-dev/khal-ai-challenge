@@ -1,43 +1,61 @@
-# SPEC-022 - `get_conversation_context` + memória por `titular_id` (R-03 + R-12)
+# SPEC-022 - `get_account_events` (ex `get_conversation_context`): tool de EVENTOS DE SISTEMA da conta + memoria por `titular_id` (R-03 + R-12)
 
 - Status: Approved (2026-05-31)
-- Versão alvo: 1.5.0 (a memória proativa passa a ser legível pelo agente via tool MCP)
-- ADRs: **ADR-0005 (revisão no mesmo PR)** — a injeção de memória prometida deixa de
+- Versao alvo: 1.5.0 (os eventos proativos passam a ser legiveis pelo agente via tool MCP)
+- ADRs: **ADR-0005 (revisao no mesmo PR)** — a injecao de memoria prometida deixa de
   ser "no backend que injeta o turno" e passa a ser cumprida por uma **tool MCP read-only**.
-  ADR-0012 (auditoria por tool-call) cobre a nova tool sem mudança de mecanismo.
-- Itens do roadmap: **R-03** (tool de memória legível) **+ R-12** (chave por `titular_id`,
-  acoplado na mesma SPEC para a tool já consumir a chave correta).
+  **ADR-0013** — formaliza a fronteira de memoria do agente (transcricao Omni vs eventos
+  desta store vs sessao Genie) e **renomeia** `get_conversation_context` → `get_account_events`.
+  ADR-0012 (auditoria por tool-call) cobre a tool sem mudanca de mecanismo.
+- Itens do roadmap: **R-03** (tool de eventos legivel) **+ R-12** (chave por `titular_id`,
+  acoplado na mesma SPEC para a tool ja consumir a chave correta).
+- Tool de transcricao conversacional (`get_chat_history`): **fora desta SPEC**, ver
+  **SPEC-024** (fonte e uso distintos — Omni/WhatsApp vs `conversation_memory`).
 
 ## 1. Problema
 
-O ADR-0005 prometia que o contexto gravado em `conversation_memory` (pagamento confirmado,
-interrupção aberta/encerrada, último protocolo) chegaria ao agente "pela entrada confiável do
-canal", lido no backend e **injetado** no turno. Essa injeção **nunca foi implementada**: o
-spawn do agente só passa o `AGENTS.md` estático. Resultado: a **escrita** da memória é
-determinística e correta (worker/`ProactiveService`), mas o agente **não lê** nada — não há
-tool MCP de memória. O loop proativo↔reativo fica aberto: o cliente recebe "sua fatura foi
-paga" pelo fluxo proativo e, no turno seguinte, o agente reoferece a 2ª via da mesma fatura.
+O ADR-0005 prometia que os **eventos de sistema** gravados em `conversation_memory`
+(pagamento confirmado, interrupcao aberta/encerrada, ultimo protocolo) chegariam ao
+agente "pela entrada confiavel do canal", lidos no backend e **injetados** no turno. Essa
+injecao **nunca foi implementada**: o spawn do agente so passa o `AGENTS.md` estatico.
+Resultado: a **escrita** desses eventos e deterministica e correta
+(worker/`ProactiveService`), mas o agente **nao le** nada — nao havia tool MCP de leitura.
+O loop proativo↔reativo fica aberto: o cliente recebe "sua fatura foi paga" pelo fluxo
+proativo e, no turno seguinte, o agente reoferece a 2a via da mesma fatura.
 
-Além disso, a memória é chaveada por `chat_id == telefone E.164` (`EventoCX.chat_id` retorna
+Havia ainda um segundo problema, de **nome**: a tool que materializou R-03 chamava-se
+`get_conversation_context`, mas **nao** retorna a conversa — retorna **eventos tipados de
+sistema**. O nome induzia o agente (e o leitor) a tratar fatos deterministicos como
+transcricao, ou a nunca buscar o texto real da conversa (que vive no Omni). O ADR-0013
+formaliza a fronteira e **renomeia** a tool para `get_account_events`.
+
+Por fim, a memoria e chaveada por `chat_id == telefone E.164` (`EventoCX.chat_id` retorna
 `self.telefone`; `ProactiveService.processar` grava com `chat_id=evento.chat_id`). Isso
-fragmenta o contexto quando o titular tem **múltiplas UCs** (SPEC-013) ou liga de **número
-diferente / LID** (SPEC-015). A chave correta é `titular_id` (R-12).
+fragmenta o contexto quando o titular tem **multiplas UCs** (SPEC-013) ou liga de **numero
+diferente / LID** (SPEC-015). A chave correta e `titular_id` (R-12).
 
 ## 2. Objetivo
 
-1. **R-03:** uma 10ª tool MCP **read-only** `get_conversation_context(phone)` que resolve o
-   titular pelo telefone do remetente e devolve os **fatos canônicos recentes** já gravados,
-   sob o **mesmo guardrail de acesso por telefone** das demais tools. O agente a chama no
-   **abrir** da conversa (junto de `find_customer_by_phone`) para não repetir o que já foi
-   resolvido.
-2. **R-12 (acoplado):** especificar a migração da chave de memória para `titular_id`, de modo
-   que a tool já consuma a chave correta, **sem quebrar** o `/{chat_id}/memory` legado (o
-   console do operador lê por chat).
+1. **R-03:** uma 10a tool MCP **read-only** `get_account_events(phone)` que resolve o
+   titular pelo telefone do remetente e devolve os **eventos canonicos recentes de sistema**
+   ja gravados, sob o **mesmo guardrail de acesso por telefone** das demais tools. O agente a
+   chama no **abrir** da conversa (junto de `find_customer_by_phone`) para nao reoferecer o
+   que o sistema ja resolveu (ex.: nao oferecer 2a via de fatura paga, nao reabrir chamado
+   encerrado). **Nao** e a transcricao da conversa.
+2. **R-12 (acoplado):** especificar a migracao da chave de memoria para `titular_id`, de modo
+   que a tool ja consuma a chave correta, **sem quebrar** o `/{chat_id}/memory` legado (o
+   console do operador le por chat).
+
+> **Renomeacao (ADR-0013):** a tool e a **mesma** de hoje — read-only, lendo
+> `conversation_memory`, mesmo guardrail, **assinatura/retorno externos inalterados**. Muda
+> **apenas o nome** (`get_conversation_context` → `get_account_events`) e a **narrativa**
+> (eventos de sistema, nao "conversation context"). A tool de transcricao
+> (`get_chat_history`, SPEC-024) cobre o uso conversacional distinto.
 
 ## 3. Contrato da tool
 
 ```python
-get_conversation_context(phone: str) -> dict[str, Any]
+get_account_events(phone: str) -> dict[str, Any]
 ```
 
 - **Sucesso (titular resolvido):**
@@ -51,97 +69,116 @@ get_conversation_context(phone: str) -> dict[str, Any]
     "total": 1
   }
   ```
-  Itens **ordenados do mais recente para o mais antigo** e **truncados nas últimas N=10**.
-  `N` é default da tool (`_MEMORIA_LIMITE`), **não** input do agente. Cada item corresponde a
-  uma linha de `conversation_memory` gravada deterministicamente pelo `ProactiveService`/worker
-  (ex.: `proativo.pagamento.confirmado`, `proativo.outage.encerrada`).
-- **Telefone não resolve titular:** `{"encontrado": false, "motivo": "Telefone nao identificado."}`
-  (mesmo formato das demais tools) — e a memória **não** é consultada.
-- **Read-only:** não escreve, não muta estado.
+  Itens **ordenados do mais recente para o mais antigo** e **truncados nas ultimas N=10**.
+  `N` e default da tool (`_MEMORIA_LIMITE`, teto da tool), **nao** input do agente. Cada item
+  corresponde a uma linha de `conversation_memory` gravada deterministicamente pelo
+  `ProactiveService`/worker (ex.: `proativo.pagamento.confirmado`, `proativo.outage.encerrada`).
+  Sao **eventos tipados de sistema**, nao texto de conversa.
+- **Telefone nao resolve titular:** `{"encontrado": false, "motivo": "Telefone nao identificado."}`
+  (mesmo formato das demais tools) — e a memoria **nao** e consultada.
+- **Erro/vazio (best-effort):** `itens=[]`, sem quebrar nem afirmar ausencia.
+- **Read-only:** nao escreve, nao muta estado.
 
-## 4. Guardrail (determinístico, no código — não no prompt)
+## 4. Guardrail (deterministico, no codigo — nao no prompt)
 
-1. Resolve o titular **sempre** pelo `phone` do remetente (contexto confiável injetado pelo
-   canal/Omni), **nunca** por id/telefone citado pelo cliente (não contornável por injection).
-2. Se não resolve titular → `{"encontrado": false}` e **não** consulta memória.
-3. Lê **apenas** a memória do chat do próprio titular. Como a memória é chaveada por
-   `chat_id == telefone E.164` (ADR-0005), a tool usa o **telefone canônico normalizado**
-   (`variantes_nono_digito` sobre `normalizar_msisdn`, SPEC-015), **nunca** o telefone cru
-   recebido. Para na primeira variante com memória.
+1. Resolve o titular **sempre** pelo `phone` do remetente (contexto confiavel injetado pelo
+   canal/Omni), **nunca** por id/telefone citado pelo cliente (nao contornavel por injection).
+2. Se nao resolve titular → `{"encontrado": false}` e **nao** consulta memoria.
+3. Le **apenas** a memoria do proprio titular pelas **variantes canonicas do telefone
+   normalizado** (`variantes_nono_digito` sobre `normalizar_msisdn`, SPEC-015), **nunca** o
+   telefone cru recebido. Para na primeira variante com memoria.
 4. Auditada por `AuditedCxTools` como as demais (ADR-0012): log estruturado + sink best-effort,
-   PII mascarada (`phone` → sufixo de 4 dígitos).
+   PII mascarada (`phone` → sufixo de 4 digitos).
 
 ## 5. Escopo
 
 ### MCP (R-03 — entregue nesta SPEC)
 - `ports.py`: `LegacyApiClient` += `get_conversation_memory(chat: str, limit: int = 10) -> list[dict]`.
 - `client.py`: `HttpxLegacyApiClient.get_conversation_memory` → `GET /conversations/{chat}/memory`
-  (envia `?limit=` por cortesia; a truncagem definitiva é no CxTools, o router legado pode
-  ignorar o parâmetro sem quebrar).
-- `tools.py`: `CxTools.get_conversation_context(phone)` + helper privado
-  `_ler_memoria_do_titular(phone)` (resolve variantes canônicas, ordena, trunca em N=10).
-- `audit.py`: `AuditedCxTools.get_conversation_context` (espelha a superfície, instrumentada).
-- `server.py`: 10ª `@mcp.tool() get_conversation_context` (registrada **por último** → ordem
-  estável para a allowlist do R-02 / cache R-07).
-- Allowlist (R-02, fonte única `src/interfaces/mcp/allowlist.py`): a tool entra como 10º nome,
-  habilitada em **produção** (frontmatter) e nos **evals** (`run.py`), com **teste de paridade**
-  que impede drift.
+  (envia `?limit=` por cortesia; a truncagem definitiva e no CxTools, o router legado pode
+  ignorar o parametro sem quebrar).
+- `tools.py`: `CxTools.get_account_events(phone)` + helper privado
+  `_ler_memoria_do_titular(phone)` (resolve variantes canonicas, ordena, trunca em N=10).
+- `audit.py`: `AuditedCxTools.get_account_events` (espelha a superficie, instrumentada).
+- `server.py`: 10a `@mcp.tool() get_account_events` (registrada **por ultimo entre as 10**, na
+  posicao 10 da ordem canonica → ordem estavel para a allowlist do R-02 / cache R-07; a 11a,
+  `get_chat_history`, e registrada depois — SPEC-024).
+- Allowlist (R-02, fonte unica `src/interfaces/mcp/allowlist.py`): a tool entra como **10o**
+  nome (`get_account_events`), habilitada em **producao** (frontmatter) e nos **evals**
+  (`run.py`), com **teste de paridade** que impede drift.
+- `AGENTS.md`: secao "Memoria e historico (duas fontes distintas — nunca confunda)" descreve
+  `get_account_events` (fatos de sistema) vs `get_chat_history` (transcricao, SPEC-024); regra
+  pratica "o que o SISTEMA fez → `get_account_events`; o que foi DITO → `get_chat_history`".
 
-### REST (reúso, R-03 puro)
-- **Sem endpoint novo** para R-03: reúsa `GET /conversations/{chat_id}/memory`
+> **Renomeacao no stack inteiro:** `server.py` (`@mcp.tool`), `CxTools` + `AuditedCxTools`,
+> `allowlist.TOOL_NAMES[9]`, frontmatter, eval-scope e `AGENTS.md` passam de
+> `get_conversation_context` para `get_account_events`. Nada do **comportamento** muda.
+
+### REST (reuso, R-03 puro)
+- **Sem endpoint novo** para R-03: reusa `GET /conversations/{chat_id}/memory`
   (`src/interfaces/rest/routers/conversation.py:14`, `response_model=list[MemoryItemDTO]`
-  → `[{chave, valor, atualizado_em}]`). O `chat_id` é o telefone.
-- Desejável (barato, opcional): aceitar `?limit=` no router e em `MemoryService.get` para
-  truncar no servidor. Enquanto não houver, a truncagem ocorre no CxTools.
+  → `[{chave, valor, atualizado_em}]`). O `chat_id` e o telefone.
+- Desejavel (barato, opcional): aceitar `?limit=` no router e em `MemoryService.get` para
+  truncar no servidor. Enquanto nao houver, a truncagem ocorre no CxTools.
 
 ### R-12 (acoplado — chave por `titular_id`)
-- Migração Alembic: `conversation_memory` reindexada por `titular_id` (resolvido via
-  `BillingService.find_customer_by_phone`), mantendo `chat_id` como **chave secundária** para
-  registros sem `titular_id` resolvível (fallback idempotente).
+- Migracao Alembic: `conversation_memory` reindexada por `titular_id` (resolvido via
+  `BillingService.find_customer_by_phone`), mantendo `chat_id` como **chave secundaria** para
+  registros sem `titular_id` resolvivel (fallback idempotente).
 - `MemoriaRepository.list_for_titular(titular_id)` + `MemoryService.get_por_titular`.
 - **Endpoint novo:** `GET /conversations/by-titular/{titular_id}/memory` (mesmo
   `response_model`), **sem quebrar** `/{chat_id}/memory` (console por chat).
 - A tool migra **por dentro**: `_ler_memoria_do_titular` passa a chamar
   `get_conversation_memory_by_titular(titular_id)` — **a assinatura e o retorno externos da
-  tool não mudam** (`get_conversation_context(phone) -> mesmo dict`). Só muda o adapter REST.
+  tool nao mudam** (`get_account_events(phone) -> mesmo dict`). So muda o adapter REST.
+- **R-12 (chave por `titular_id`)** permanece intacto nesta SPEC: a renomeacao da tool nao
+  altera a regra de chaveamento da memoria nem o fallback.
 
 ## 6. Fora de escopo
 
-- Memória semântica de longo prazo / recall por similaridade (R-15).
-- Resumo/compactação da memória por LLM (R-08/R-15).
-- Escrita de memória pela tool (a tool é read-only; a escrita continua 100% determinística no
+- **Transcricao conversacional** (texto cru do que foi DITO): e a tool `get_chat_history` da
+  **SPEC-024** (fonte Omni/WhatsApp, uso distinto — recuperacao de fio pos cold-start).
+- Memoria semantica de longo prazo / recall por similaridade (R-15).
+- Resumo/compactacao da memoria por LLM (R-08/R-15).
+- Escrita de memoria pela tool (a tool e read-only; a escrita continua 100% deterministica no
   worker/`ProactiveService`).
 
 ## 7. Plano TDD
 
 1. **Port/adapter** (unit): `get_conversation_memory` faz `GET` com `?limit=` e devolve a lista.
 2. **Tool** (unit, fakes):
-   - retorna o contexto do titular (chaves canônicas presentes);
+   - retorna os eventos do titular (chaves canonicas presentes);
    - itens do mais recente para o mais antigo;
-   - telefone desconhecido → `encontrado=false` e **não** consulta memória;
-   - **não vaza** memória de outro titular (Carlos não recebe a memória da Ana);
-   - best-effort sem memória (itens vazios, sem quebrar).
-3. **Paridade (R-02)** `tests/unit/test_mcp_allowlist_parity.py`: `get_conversation_context`
-   presente nas 3 fontes (server, eval-scope, frontmatter); server == allowlist em conjunto.
-4. **Contagem:** `server.py` passa a registrar **10** `@mcp.tool()`.
-5. **R-12:** migração idempotente + endpoint `by-titular` + repo `list_for_titular`, com
-   fallback para `chat_id`; suite de regressão verde (console por chat segue funcionando).
+   - telefone desconhecido → `encontrado=false` e **nao** consulta memoria;
+   - **nao vaza** memoria de outro titular (Carlos nao recebe a memoria da Ana);
+   - best-effort sem memoria (itens vazios, sem quebrar).
+3. **Paridade (R-02)** `tests/unit/test_mcp_allowlist_parity.py` / `test_tool_scope_parity.py`:
+   `get_account_events` presente nas 3 fontes (server, eval-scope, frontmatter) na posicao 10;
+   server == allowlist em conjunto e ordem.
+4. **Contagem:** `server.py` registra `get_account_events` como 10a tool (a 11a,
+   `get_chat_history`, vem da SPEC-024).
+5. **R-12:** migracao idempotente + endpoint `by-titular` + repo `list_for_titular`, com
+   fallback para `chat_id`; suite de regressao verde (console por chat segue funcionando).
 
-## 8. Critérios de aceite
+## 8. Criterios de aceite
 
-- No 1º turno, o agente chama `find_customer_by_phone` **e** `get_conversation_context` e
-  **não** reoferece a 2ª via de uma fatura já marcada como paga na memória.
-- Guardrail: telefone sem titular → `encontrado=false`, **sem** leitura de memória; a tool
-  jamais devolve memória de chat que não seja do titular resolvido.
-- A tool aparece em **produção** (frontmatter) **e** nos **evals**, e o teste de paridade
-  bloqueia drift (cobre R-02 + R-03).
-- R-12: memória chaveada por `titular_id` com fallback `chat_id`; assinatura/retorno externos
+- No 1o turno, o agente chama `find_customer_by_phone` **e** `get_account_events` e
+  **nao** reoferece a 2a via de uma fatura ja marcada como paga na memoria.
+- Guardrail: telefone sem titular → `encontrado=false`, **sem** leitura de memoria; a tool
+  jamais devolve memoria de chat que nao seja do titular resolvido.
+- A tool aparece em **producao** (frontmatter) **e** nos **evals** com o nome
+  `get_account_events`, e o teste de paridade bloqueia drift (cobre R-02 + R-03).
+- R-12: memoria chaveada por `titular_id` com fallback `chat_id`; assinatura/retorno externos
   da tool inalterados.
 - unit + api + integration + lint/typecheck verdes.
 
 ## 9. Notas
 
-- A tool **não** precisa de endpoint novo para R-03 puro porque `chat_id == telefone`. O
-  endpoint `by-titular` só entra com R-12 e é aditivo.
+- A tool **nao** precisa de endpoint novo para R-03 puro porque `chat_id == telefone`. O
+  endpoint `by-titular` so entra com R-12 e e aditivo.
 - Ordem de registro em `server.py` = ordem em `allowlist.TOOL_NAMES` = ordem em `run.py`:
-  pré-requisito de prompt caching (R-07) e contrato do teste de paridade.
+  pre-requisito de prompt caching (R-07) e contrato do teste de paridade.
+- **Fronteira de memoria (ADR-0013):** `get_account_events` cobre os **eventos de sistema**
+  (esta store); `get_chat_history` (SPEC-024) cobre a **transcricao** (Omni); a **sessao**
+  (Genie) e fonte volatil sem tool propria. As duas tools sao read-only e resolvem o titular
+  pelo telefone do remetente.

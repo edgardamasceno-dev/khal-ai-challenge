@@ -29,8 +29,9 @@ confirmacao de escrita, validacao Pydantic); aqui endurecemos a camada
 ### AGENTS.md (WS-PROMPT — fora desta entrega de evals; especificado aqui)
 
 - **[R-11] `## Abertura da conversa (1o turno)`**: apos identificar o titular,
-  chamar `get_invoice_status` + `get_outage_by_region` (+ `get_conversation_context`,
-  SPEC-022) **em paralelo** e oferecer um **MENU curto e personalizado** (boas-vindas
+  chamar `get_invoice_status` + `get_outage_by_region` (+ `get_account_events`,
+  ex `get_conversation_context`, SPEC-022 / ADR-0013) **em paralelo** e oferecer um
+  **MENU curto e personalizado** (boas-vindas
   cordial com o nome). Nao despejar todos os dados; oferecer opcoes.
 - **[R-11] `## Cliente nao identificado (find_customer_by_phone encontrado=false)`**:
   substituir o beco-sem-saida por **recuperacao empatica** — pedir desculpas,
@@ -55,8 +56,9 @@ gerados pelo mesmo padrao data-driven de J1/J2 quando dependem do perfil:
 | Cenario | Persona / gating | Assercao | Dependencia |
 |---|---|---|---|
 | `J9-segunda-via-pdf[ph]` | personas com fatura (`cenario_fatura ∈ {uma_aberta, uma_vencida}`) | `assert_pdf`: `find_customer_by_phone` + `generate_invoice_pdf`, **nao** escreve ticket, confirma envio | stack (cobre R-02) |
-| `J10-contexto-memoria` | primaria | `assert_context`: `find_customer_by_phone` + `get_conversation_context` na abertura, **nao** escreve | stack (R-03) |
-| `J10b-nao-reabre` | primaria | `assert_nao_reabre`: consultou memoria/fatura, **nao** reabre chamado, reconhece pagamento | **seed de memoria** no DB de eval (R-03) |
+| `J10-eventos-conta` (ex `J10-contexto-memoria`) | primaria | `assert_eventos_conta` (ex `assert_context`): `find_customer_by_phone` + `get_account_events` (ex `get_conversation_context`) na abertura, **nao** escreve | stack (R-03) |
+| `J10b-eventos-nao-reabre` (ex `J10b-nao-reabre`) | primaria | `assert_nao_reabre`: consultou eventos (`get_account_events`)/fatura, **nao** reabre chamado, reconhece pagamento | **seed de memoria** no DB de eval (R-03) |
+| `J14-transcricao-historico` | primaria | `assert_transcript`: `get_chat_history` (transcricao conversacional, ADR-0013 / SPEC-024), **nao** escreve; best-effort (vazio nao falha) | seed de transcricao no Omni (best-effort) |
 | `J11-boas-vindas[ph]` | personas com `outage_ativa` | `make_welcome(nome)`: `find_customer` + (`get_invoice_status` OU `get_outage_by_region`) + saudacao com nome + menu | stack (R-11) |
 | `J12-ambiguo[ph]` | personas multi-UC (`n_ucs >= 2`) | `assert_disambig`: **nao** escreve, faz 1 pergunta de desambiguacao (aceita `list_contracts`) | stack (M-02) |
 | `J13-tool-erro` | primaria | `assert_tool_error`: **nao** vaza stack/erro tecnico, recuperacao empatica + retry/handoff | **fault-injection** (M-02) |
@@ -74,7 +76,8 @@ alem de buscar e informar "nao localizado", agora **falha** se o agente tocar
 ## 3. Fora de escopo
 
 - Contrato MCP / backend / dominio (intocados).
-- A tool `get_conversation_context` em si (SPEC-022) e a allowlist (R-02); aqui so
+- A tool `get_account_events` (ex `get_conversation_context`, SPEC-022 / ADR-0013) e
+  a tool `get_chat_history` (SPEC-024) em si, e a allowlist (R-02); aqui so
   **consumimos** os nomes do contrato nos evals.
 - Fixture de seed de memoria e harness de fault-injection (infra do runner; J10b/J13
   ficam marcados como dependentes ate a infra existir).

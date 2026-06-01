@@ -202,21 +202,55 @@ class CxTools:
         return {"encontrado": True, "titular": titular["nome"], "faturas_em_aberto": abertas}
 
     @_degrada_se_indisponivel("gerado")
-    def generate_invoice_pdf(self, phone: str, presigned: bool = False) -> dict[str, Any]:
-        """Envia a 2ª via da fatura atual ao cliente: PDF **anexo** no WhatsApp + link
-        (SPEC-017 / ADR-0003). Devolve `enviado` e a URL."""
+    def generate_invoice_pdf(
+        self,
+        phone: str,
+        presigned: bool = False,
+        mes_referencia: str | None = None,
+        numero_uc: str | None = None,
+    ) -> dict[str, Any]:
+        """Envia a 2ª via ao cliente: PDF **anexo** no WhatsApp + link (SPEC-017 / ADR-0003).
+
+        Sem `mes_referencia`/`numero_uc`: a fatura atual (mais recente em aberto, senão a mais
+        recente). Com eles: a fatura daquela competência/UC, **QUALQUER status** (paga/vencida/em
+        aberto) — SPEC-031. Em multi-UC, se a competência existir em mais de uma unidade e
+        `numero_uc` não for dado, devolve `precisa_unidade` + as UCs. Devolve `gerado`, `enviado`,
+        `mes_referencia`, `status` e a URL."""
         titular = self._api.find_customer(phone)
         if titular is None:
             return {"gerado": False, "motivo": "Telefone nao identificado."}
         faturas = [
-            inv
+            {**inv, "numero_uc": str(c["unidade"]["numero_uc"])}
             for c in self._api.list_contracts(titular["id"])
             for inv in self._api.list_invoices(c["unidade"]["id"])
         ]
         if not faturas:
             return {"gerado": False, "motivo": "Sem faturas para esta conta."}
-        abertas = [f for f in faturas if f["status"] in ("em_aberto", "vencida")]
-        alvo = max(abertas or faturas, key=lambda f: f["mes_referencia"])
+        if mes_referencia or numero_uc:
+            cand = faturas
+            if mes_referencia:
+                cand = [f for f in cand if f["mes_referencia"] == mes_referencia]
+            if numero_uc:
+                cand = [f for f in cand if f["numero_uc"] == str(numero_uc)]
+            if not cand:
+                uc_txt = f" na UC {numero_uc}" if numero_uc else ""
+                return {
+                    "gerado": False,
+                    "motivo": f"Sem fatura de {mes_referencia or 'a competência pedida'}"
+                    f"{uc_txt} nesta conta.",
+                }
+            ucs = sorted({f["numero_uc"] for f in cand})
+            if len(ucs) > 1:  # mesma competência em mais de uma UC e sem numero_uc -> desambigua
+                return {
+                    "gerado": False,
+                    "precisa_unidade": True,
+                    "unidades": ucs,
+                    "motivo": "Há faturas dessa competência em mais de uma unidade; informe a UC.",
+                }
+            alvo = max(cand, key=lambda f: f["mes_referencia"])
+        else:
+            abertas = [f for f in faturas if f["status"] in ("em_aberto", "vencida")]
+            alvo = max(abertas or faturas, key=lambda f: f["mes_referencia"])
         res = self._api.send_invoice(alvo["id"])
         return {
             "gerado": True,
@@ -351,9 +385,9 @@ class CxTools:
         if titular is None:
             return {"encontrado": False, "motivo": "Telefone nao identificado."}
         itens = self._ler_eventos_do_titular(phone)
-        recentes = sorted(
-            itens, key=lambda m: str(m.get("atualizado_em") or ""), reverse=True
-        )[:_MEMORIA_LIMITE]
+        recentes = sorted(itens, key=lambda m: str(m.get("atualizado_em") or ""), reverse=True)[
+            :_MEMORIA_LIMITE
+        ]
         return {
             "encontrado": True,
             "titular": titular["nome"],

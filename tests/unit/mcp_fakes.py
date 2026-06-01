@@ -188,16 +188,32 @@ class FakeLegacyApiClient:
 
     def invoice_pdf(self, fatura_id: str, presigned: bool = False) -> dict[str, Any]:
         if presigned:
-            return {"url": f"http://minio/invoices/{fatura_id}.pdf?X-Expires=3600",
-                    "presigned": True, "expires_at": "2026-05-30T13:00:00Z", "generated": True}
-        return {"url": f"http://localhost/files/invoices/{fatura_id}.pdf",
-                "presigned": False, "expires_at": None, "generated": True}
+            return {
+                "url": f"http://minio/invoices/{fatura_id}.pdf?X-Expires=3600",
+                "presigned": True,
+                "expires_at": "2026-05-30T13:00:00Z",
+                "generated": True,
+            }
+        return {
+            "url": f"http://localhost/files/invoices/{fatura_id}.pdf",
+            "presigned": False,
+            "expires_at": None,
+            "generated": True,
+        }
 
     def send_invoice(self, fatura_id: str) -> dict[str, Any]:
+        # SPEC-031: ecoa a fatura do id (mes/status reais) p/ os testes afirmarem a SELECIONADA;
+        # fallback ao default antigo p/ ids fora dos fixtures.
+        alvo = next(
+            (inv for invs in _INVOICES.values() for inv in invs if inv["id"] == fatura_id), None
+        )
         return {
-            "enviado": True, "mes_referencia": "2026-05", "status": "em_aberto",
+            "enviado": True,
+            "mes_referencia": alvo["mes_referencia"] if alvo else "2026-05",
+            "status": alvo["status"] if alvo else "em_aberto",
             "url": f"http://minio/invoices/{fatura_id}.pdf?X-Expires=3600",
-            "presigned": True, "expires_at": "2026-05-30T13:00:00Z",
+            "presigned": True,
+            "expires_at": "2026-05-30T13:00:00Z",
         }
 
     def get_outage(self, bairro: str) -> dict[str, Any]:

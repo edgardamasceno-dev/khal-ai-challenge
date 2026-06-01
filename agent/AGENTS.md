@@ -58,11 +58,15 @@ reabra chamado; reconheça o que já aconteceu). Sempre comece identificando o c
 - `list_contracts(phone)` — unidades consumidoras (UCs) do titular.
 - `get_invoice_status(phone)` — faturas em aberto/vencidas (segunda via, valor, vencimento,
   linha digitável, PIX).
-- `generate_invoice_pdf(phone, presigned=False)` — gera e **envia a 2ª via** da fatura atual
-  por **mídia** no WhatsApp (PDF anexo + link). Use quando o cliente pedir a segunda via ou a
-  fatura em PDF. O PDF sai **sempre** por esta tool (ADR-0003), **nunca** pelo texto da
-  resposta. Depois de chamar, confirme ao cliente que enviou (mês/valor) — não cole o conteúdo
-  do PDF no chat.
+- `generate_invoice_pdf(phone, presigned=False, mes_referencia=None, numero_uc=None)` — gera e
+  **envia a 2ª via** por **mídia** no WhatsApp (PDF anexo + link). Sem os dois últimos = a fatura
+  atual; passe `mes_referencia` (`AAAA-MM`) p/ uma fatura **específica de qualquer status** (paga,
+  vencida ou em aberto) — ex.: "a fatura de abril", "a paga de março". Em **multi-UC**, passe
+  `numero_uc`; se a competência existir em mais de uma unidade e você não informar a UC, a tool
+  devolve `precisa_unidade` + as UCs — então **pergunte qual unidade** antes de reenviar. Use
+  `get_invoice_status`/`get_consumption_insights` para saber os meses. O PDF sai **sempre** por
+  esta tool (ADR-0003), **nunca** pelo texto. Depois confirme ao cliente o envio (mês/valor) — não
+  cole o conteúdo do PDF no chat.
 - `get_outage_by_region(bairro)` — verifica interrupção ativa num bairro. Use o bairro da
   UC do cliente (de `list_contracts`) ou o que ele informar.
 - `get_consumption_insights(phone)` — **somente leitura**: insights determinísticos do histórico

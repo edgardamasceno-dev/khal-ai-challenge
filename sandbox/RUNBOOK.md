@@ -17,7 +17,9 @@ make sandbox-pair PHONE=+<DDI><bot>         # 6.1+6.2 → você digita o código
 make sandbox-connect                        # 6.3 liga a instância ao agente
 #   -> mande 1 msg do celular CLIENTE p/ o bot
 make sandbox-reseed                         # 6.4 auto-detecta o LID e re-chaveia a persona
-#   -> mande a msg real do CLIENTE -> resposta chega no WhatsApp (6.5).   Derrubar tudo: make sandbox-down
+#   -> mande a msg real do CLIENTE -> resposta chega no WhatsApp (6.5)
+make sandbox-media-on                       # 6.6 (opt-in) PDF da 2ª via como ANEXO (default = só link)
+#   Derrubar tudo: make sandbox-down
 ```
 
 > `make sandbox-up` recria o container, mas o login (volume `claude-home`) e o pgdata do Genie
@@ -265,13 +267,22 @@ docker exec khal-sandbox sh -c 'grep "POST /api/v2/messages/send" /tmp/omni-api.
 
 ### 6.6 Anexo da 2ª via (PDF) — opt-in de mídia (SPEC-019 / ADR-0010)
 
-A 2ª via sempre chega pelo **link** no texto. Para também enviar o **PDF anexo**, o upload do
-Baileys precisa subir aos CDNs (`mmg`/`*.cdn.whatsapp.net`) sem o proxy — o `fetch` do Bun não
-tuneliza upload com streaming via `CONNECT`. O `NO_PROXY` do sandbox já lista os CDNs
-(`compose.sandbox.yml`); falta só a rota direta. Opt-in (default da entrega = isolado):
+No demo, o **link presigned é `localhost`** — alcançável só na máquina local / WhatsApp Web (não
+de um celular físico), e o agente o suprime por padrão. Então o **PDF anexo** é o caminho de
+entrega: o upload do Baileys precisa subir aos CDNs (`mmg`/`*.cdn.whatsapp.net`) sem o proxy (o
+`fetch` do Bun não tuneliza upload com streaming via `CONNECT`). O `NO_PROXY` do sandbox já lista
+os CDNs (`compose.sandbox.yml`); falta só a rota direta. Opt-in (default da entrega = isolado):
 
 ```bash
-bash sandbox/enable-media.sh      # conecta a bridge + reinicia a API do Omni; aguarda reconectar
+make sandbox-media-on      # = bash sandbox/enable-media.sh (conecta a `bridge`)
+#   -> re-peça a 2ª via no WhatsApp; o PDF chega como ANEXO.
+make sandbox-media-off     # = bash sandbox/disable-media.sh (restaura o isolamento)
+```
+
+Teste E2E direto pelo backend (titular real, sem depender do turno do agente):
+
+```bash
+bash sandbox/enable-media.sh      # (idem make sandbox-media-on)
 # teste E2E (titular real):
 FID=$(docker exec khal-database psql -U khal -d khal -tAc \
   "select f.id from faturas f join unidades_consumidoras u on u.id=f.uc_id \

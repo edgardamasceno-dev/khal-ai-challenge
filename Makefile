@@ -1,4 +1,4 @@
-.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-wanet sandbox-pair sandbox-connect sandbox-reseed sandbox-down agent-evals
+.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-wanet sandbox-pair sandbox-connect sandbox-reseed sandbox-media-on sandbox-media-off sandbox-down agent-evals
 
 # SHAs pinados dos repos NAO-confiaveis (docs/07) que o Dockerfile do sandbox copia.
 GENIE_PIN := a407a2e2
@@ -100,6 +100,15 @@ sandbox-connect:
 # WhatsApp manda (auto-detecta do log; override: make sandbox-reseed LID=<digitos>).
 sandbox-reseed:
 	@bash sandbox/reseed.sh "$(LID)"
+
+# Etapa 6.6 (RUNBOOK): OPT-IN do anexo de PDF (SPEC-019/ADR-0010). Conecta a rede `bridge`
+# (saida NAT) p/ o upload do Baileys aos CDNs de midia — o link presigned e localhost (so
+# alcancavel local/WhatsApp Web), entao o ANEXO e o caminho de entrega no demo. Default =
+# isolado (so o link). sandbox-media-off restaura o isolamento.
+sandbox-media-on:
+	@bash sandbox/enable-media.sh
+sandbox-media-off:
+	@bash sandbox/disable-media.sh
 
 sandbox-down:
 	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml down

@@ -201,6 +201,61 @@ def test_j17_lembrete_le_evento_via_get_account_events() -> None:
     assert ok
 
 
+def test_j10b_assertion_ancora_em_tool_call_get_account_events() -> None:
+    # R-03 (variante forte): o invariante de J10b e tool-call, nao wording.
+    # Passa: leu get_account_events + NAO escreveu chamado + reconhecimento leniente.
+    from src.evals.harness import AgentRun, ToolCall
+
+    personas = carregar_personas("Ana Souza:555199990001", 42)
+    j10b = next(s for s in build_scenarios(personas) if s.name == "J10b-eventos-nao-reabre")
+
+    run_ok = AgentRun(
+        calls=[
+            ToolCall("find_customer_by_phone", {"phone": "555199990001"}),
+            ToolCall("get_account_events", {"phone": "555199990001"}),
+        ],
+        result="Já consta o pagamento da sua fatura — está tudo em dia, não precisa fazer nada.",
+        is_error=False,
+    )
+    ok, _ = j10b.assertion(run_ok)
+    assert ok
+
+    # FAIL: nao leu os eventos de sistema (sinal forte ausente), mesmo com wording bom.
+    run_sem_eventos = AgentRun(
+        calls=[ToolCall("find_customer_by_phone", {"phone": "555199990001"})],
+        result="Sua fatura está paga, tudo em dia.",
+        is_error=False,
+    )
+    ok_sem, _ = j10b.assertion(run_sem_eventos)
+    assert not ok_sem
+
+    # FAIL: reabriu/abriu chamado para uma fatura ja quitada (invariante forte violado).
+    run_ticket = AgentRun(
+        calls=[
+            ToolCall("get_account_events", {"phone": "555199990001"}),
+            ToolCall("create_ticket", {"phone": "555199990001", "confirmar": True}),
+        ],
+        result="Já consta como paga, mas abri um chamado mesmo assim.",
+        is_error=False,
+    )
+    ok_ticket, _ = j10b.assertion(run_ticket)
+    assert not ok_ticket
+
+
+def test_j10b_tem_setup_de_precondicao_e_referencia_pagamento() -> None:
+    # A precondicao de J10b e montada no harness (Scenario.setup), nao no estado real:
+    # o cenario carrega o setter `seed_pagamento_confirmado` e a mensagem casa o evento.
+    from src.evals.journeys import seed_pagamento_confirmado
+
+    personas = carregar_personas("Ana Souza:555199990001", 42)
+    j10b = next(s for s in build_scenarios(personas) if s.name == "J10b-eventos-nao-reabre")
+    assert j10b.setup is seed_pagamento_confirmado
+    assert "paguei ontem" in j10b.message.lower()
+    # Os demais cenarios NAO tem setup (isolamento: so J10b semeia estado).
+    outros = [s for s in build_scenarios(personas) if s.name != "J10b-eventos-nao-reabre"]
+    assert all(s.setup is None for s in outros)
+
+
 def test_default_emite_j2_para_a_persona_canonica_de_outage() -> None:
     # Com o default (ADR-0011), Ana tem outage_ativa=True FIXO: a suíte sempre
     # gera a jornada J2 (falta de energia) — não depende mais de sorte.

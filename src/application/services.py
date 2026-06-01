@@ -24,6 +24,7 @@ from src.application.ports import (
     MemoriaRepository,
     ObjectStorage,
     OmniSender,
+    SummarizerPort,
     TitularRepository,
     UnidadeRepository,
     UnitOfWork,
@@ -31,6 +32,7 @@ from src.application.ports import (
 from src.domain.billing.documento import DocumentoFatura, FaturaDetalhada
 from src.domain.billing.entities import Contrato, Fatura, Titular, UnidadeConsumidora
 from src.domain.conversation.entities import MemoriaConversa, MensagemChat
+from src.domain.conversation.summarize import resumo_extrativo
 from src.domain.notifications.entities import EventoCX
 from src.domain.notifications.templates import render_notificacao
 from src.domain.outage.entities import Interrupcao
@@ -345,6 +347,7 @@ class TicketingService:
         directory: ChatDirectoryPort | None = None,
         sender: OmniSender | None = None,
         clock: Clock | None = None,
+        thread_summary: ThreadSummaryService | None = None,
     ) -> None:
         self._chamados = chamados
         self._handoffs = handoffs
@@ -354,6 +357,8 @@ class TicketingService:
         self._directory = directory
         self._sender = sender
         self._clock: Clock = clock or _utcnow
+        # Resumo de thread no fechamento (R-15). Opt-in e best-effort: sem ele, no-op.
+        self._thread_summary = thread_summary
 
     def open_ticket(
         self,
@@ -431,7 +436,15 @@ class TicketingService:
         titular = self._titulares.get(atualizado.titular_id)
         if titular is not None:
             self._notificar(titular, mensagem_chamado_resolvido(titular.nome, atualizado))
+            self._resumir_thread(titular.telefone.value, atualizado.protocolo)
         return atualizado
+
+    def _resumir_thread(self, phone: str | None, protocolo: str | None) -> None:
+        """Dispara o resumo de thread no fechamento (R-15), best-effort. Sem o
+        serviço configurado é no-op; qualquer falha é engolida (não bloqueia)."""
+        if self._thread_summary is None:
+            return
+        self._thread_summary.summarize_thread_safe(phone, protocolo)
 
     def _notificar(self, titular: Titular, texto: str) -> None:
         """Envia o texto ao WhatsApp do titular. Best-effort: o `OmniSender` não
@@ -513,6 +526,9 @@ class TicketingService:
             self._uow.rollback()
             raise
         assert resolvido is not None
+        # Resumo da thread no fechamento do handoff (R-15), best-effort. Chaveado
+        # por ts (sem protocolo de ticket): o handoff pode não ter chamado.
+        self._resumir_thread(resolvido.remetente, None)
         return resolvido
 
 
@@ -849,3 +865,96 @@ class ProactiveReminderService:
         )
         self._bus.publish(evento.subject, ProactiveService._payload(evento))
         return True
+
+
+class ThreadSummaryService:
+    """Resume a thread no fechamento de ticket/handoff (R-15 / SPEC-028 / ADR-0019).
+
+    Lê a transcrição da conversa (Omni, via `ChatTranscriptPort`), gera um resumo
+    e o grava em `conversation_memory` como `kind=resumo` (tag no JSONB `valor`,
+    sem coluna nova — segue ADR-0013). A geração é por **estratégia**: tenta o
+    `SummarizerPort` injetado (LLM Haiku, opt-in) e, em QUALQUER falha — ou quando
+    `summarizer is None` —, cai no `resumo_extrativo` (determinístico, default).
+
+    Best-effort por design: nenhuma exceção propaga para o chamador
+    (`resolve_ticket`/`resume_handoff`). O fechamento **nunca** depende do resumo.
+    """
+
+    def __init__(
+        self,
+        transcript: ChatTranscriptPort,
+        memorias: MemoriaRepository,
+        titulares: TitularRepository,
+        uow: UnitOfWork,
+        summarizer: SummarizerPort | None = None,
+        clock: Clock | None = None,
+        max_mensagens: int = 50,
+    ) -> None:
+        self._transcript = transcript
+        self._memorias = memorias
+        self._titulares = titulares
+        self._uow = uow
+        self._summarizer = summarizer
+        self._clock: Clock = clock or _utcnow
+        self._max_mensagens = max_mensagens
+
+    def _resolver_titular(self, phone: str) -> Titular | None:
+        """Telefone/LID -> titular (tolerante ao 9º dígito). None se desconhecido."""
+        return self._titulares.find_by_phone_em(
+            variantes_nono_digito(normalizar_msisdn(phone))
+        )
+
+    def _gerar(self, mensagens: list[MensagemChat]) -> tuple[str, str]:
+        """Aplica a estratégia: LLM (se opt-in e ok) ou fallback extrativo.
+        Devolve (texto, fonte) onde fonte ∈ {"haiku", "extrativo"}."""
+        if self._summarizer is not None:
+            try:
+                texto = self._summarizer.summarize(mensagens)
+                if texto and texto.strip():
+                    return texto.strip(), "haiku"
+            except Exception:  # noqa: BLE001 - qualquer falha -> fallback determinístico
+                pass
+        return resumo_extrativo(mensagens), "extrativo"
+
+    @staticmethod
+    def _chave(protocolo: str | None, ts_iso: str) -> str:
+        """Chave da memória do resumo: por protocolo quando há ticket; senão por ts."""
+        sufixo = protocolo if protocolo else ts_iso
+        return f"resumo.{sufixo}"
+
+    def summarize_thread(self, phone: str, protocolo: str | None = None) -> dict[str, object]:
+        """Resolve o titular, lê a transcrição, resume e grava `kind=resumo`.
+
+        Devolve `{"resumo", "fonte", "gravado"}`. Determinístico no fallback.
+        Idempotente por chave (`resumo.<protocolo|ts>`): mesma chave -> upsert."""
+        titular = self._resolver_titular(phone)
+        mensagens, _, _ = self._transcript.mensagens(phone, self._max_mensagens, None)
+        texto, fonte = self._gerar(mensagens)
+        agora_iso = self._clock().isoformat()
+        valor = {"texto": texto, "kind": "resumo", "fonte": fonte, "em": agora_iso}
+        chat_id = titular.telefone.value if titular is not None else phone
+        try:
+            self._memorias.upsert(
+                chat_id,
+                self._chave(protocolo, agora_iso),
+                valor,
+                titular.id if titular is not None else None,
+            )
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+        return {"resumo": texto, "fonte": fonte, "gravado": True}
+
+    def summarize_thread_safe(
+        self, phone: str | None, protocolo: str | None = None
+    ) -> None:
+        """Variante best-effort para o disparo no fechamento: engole QUALQUER falha
+        (inclusive de persistência) e é no-op sem telefone. O fechamento de
+        ticket/handoff NUNCA é bloqueado por uma falha de resumo."""
+        if not phone:
+            return
+        try:
+            self.summarize_thread(phone, protocolo)
+        except Exception:  # noqa: BLE001 - best-effort: resumo jamais bloqueia o fechamento
+            return

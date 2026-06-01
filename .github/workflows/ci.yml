@@ -16,15 +16,11 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - develop
-      - "feature/**"
   pull_request:
     branches:
       - develop
 
-# Cancela runs antigos do mesmo ref (PR/branch) assim que um novo push chega.
+# Cancela runs antigos do mesmo PR assim que um novo push chega ao branch dele.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -76,7 +72,7 @@ jobs:
           cache-dependency-glob: "uv.lock"
 
       - name: Instala dependencias (dev)
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Cliente psql (para aplicar o schema no service)
         run: |
@@ -110,8 +106,8 @@ jobs:
     name: Eval gate (>= 85)
     needs: quality
     runs-on: ubuntu-latest
-    # So roda quando ha segredo de auth do agente; em PR de fork / sem secret -> SKIP.
-    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.fork == false }}
+    # So roda em PR do proprio repo (nao-fork); sem ANTHROPIC_API_KEY o job da SKIP limpo.
+    if: ${{ github.event.pull_request.head.repo.fork == false }}
 
     steps:
       - name: Verifica disponibilidade do segredo
@@ -140,7 +136,7 @@ jobs:
 
       - name: Instala dependencias (dev)
         if: steps.guard.outputs.has_key == 'true'
-        run: uv sync --dev
+        run: uv sync --extra dev
 
       - name: Sobe o stack minimo para o /mcp
         if: steps.guard.outputs.has_key == 'true'

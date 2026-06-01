@@ -196,12 +196,12 @@ sandbox a uma rede **não-interna** (mantém backend/database inalcançáveis = 
 abre mão do allowlist de egress p/ o processo omni/Baileys):
 
 ```bash
-docker network create khal-wanet 2>/dev/null || true
-docker network connect khal-wanet khal-sandbox
-# valida: WSS direto OK, negócio ainda bloqueado:
-docker exec khal-sandbox sh -c 'curl -s -o /dev/null -w "wa %{http_code}\n" --noproxy "*" https://web.whatsapp.com; \
-  curl -s -o /dev/null -w "backend %{http_code} (espera 000)\n" --noproxy "*" --max-time 4 http://backend:8000/health'
+make sandbox-wanet     # cria khal-wanet + conecta o sandbox + valida (WSS OK; backend/db 000)
 ```
+
+Equivalente manual: `docker network create khal-wanet` + `docker network connect khal-wanet
+khal-sandbox` + os `curl --noproxy "*"` de validação (web.whatsapp.com alcança; backend/database
+seguem `000` = bloqueados).
 
 ### 6.1 Autentica o CLI do omni
 

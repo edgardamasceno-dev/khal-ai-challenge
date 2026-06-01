@@ -1,4 +1,4 @@
-.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-down agent-evals
+.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-wanet sandbox-down agent-evals
 
 # SHAs pinados dos repos NAO-confiaveis (docs/07) que o Dockerfile do sandbox copia.
 GENIE_PIN := a407a2e2
@@ -73,6 +73,18 @@ sandbox-serve:
 # Self-test reproduzivel (exit != 0 se a malha nao fechar). A entrega real e a Etapa 6.
 sandbox-smoke:
 	bash sandbox/smoke.sh
+
+# Etapa 6.0 (RUNBOOK): a PARTE DETERMINISTICA do E2E WhatsApp real. Conecta o sandbox a uma
+# rede NAO-interna (khal-wanet) p/ o WSS direto do Baileys (que nao honra HTTP_PROXY). Mantem
+# backend/database INALCANCAVEIS (so-MCP) — abre mao do egress allowlist SO p/ o omni/Baileys.
+# O resto da Etapa 6 (omni auth, criar instancia, PAREAR — 2 celulares) e interativo: RUNBOOK §6.
+sandbox-wanet:
+	@docker network create khal-wanet >/dev/null 2>&1 || true
+	@docker network connect khal-wanet khal-sandbox 2>/dev/null || true
+	@docker exec khal-sandbox sh -c 'curl -s -o /dev/null -w ">> web.whatsapp.com -> %{http_code} (espera 200/4xx = alcanca)\n" --noproxy "*" --max-time 8 https://web.whatsapp.com; \
+	  curl -s -o /dev/null -w ">> backend          -> %{http_code} (espera 000 = bloqueado)\n" --noproxy "*" --max-time 4 http://backend:8000/health; \
+	  curl -s -o /dev/null -w ">> database         -> %{http_code} (espera 000 = bloqueado)\n" --noproxy "*" --max-time 4 http://database:5432' || true
+	@echo ">> sandbox na khal-wanet. Proximo (RUNBOOK §6): omni auth + criar/parear a instancia (interativo, 2 celulares)."
 
 sandbox-down:
 	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml down

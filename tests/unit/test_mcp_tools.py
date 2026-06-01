@@ -3,11 +3,41 @@ from __future__ import annotations
 from typing import Any
 
 from src.interfaces.mcp.tools import CxTools
-from tests.unit.mcp_fakes import FakeLegacyApiClient
+from tests.unit.mcp_fakes import FakeLegacyApiClient, _inv
 
 ANA = "555199990001"
 CARLOS = "555199990002"
 DESCONHECIDO = "550000000000"
+MULTI = "555100000099"
+
+
+class _FakeMultiUC(FakeLegacyApiClient):
+    """Titular com 2 UCs e faturas no MESMO mês — p/ testar a desambiguação (SPEC-031)."""
+
+    def find_customer(self, phone: str) -> dict[str, Any] | None:
+        if phone == MULTI:
+            return {"id": "T-MULTI", "nome": "Multi UC"}
+        return super().find_customer(phone)
+
+    def list_contracts(self, titular_id: str) -> list[dict[str, Any]]:
+        if titular_id == "T-MULTI":
+            return [
+                {"unidade": {"id": "UC-M1", "numero_uc": "900000001"}},
+                {"unidade": {"id": "UC-M2", "numero_uc": "900000002"}},
+            ]
+        return super().list_contracts(titular_id)
+
+    def list_invoices(self, uc_id: str) -> list[dict[str, Any]]:
+        if uc_id == "UC-M1":
+            return [_inv("UC-M1", "2026-05", "paga")]
+        if uc_id == "UC-M2":
+            return [_inv("UC-M2", "2026-05", "em_aberto")]
+        return super().list_invoices(uc_id)
+
+    def send_invoice(self, fatura_id: str) -> dict[str, Any]:
+        # ecoa o status pela UC do id (F-UC-M1-... = paga; F-UC-M2-... = em_aberto).
+        status = "paga" if "UC-M1" in fatura_id else "em_aberto"
+        return {"enviado": True, "mes_referencia": "2026-05", "status": status, "url": "http://x"}
 
 
 def _tools() -> CxTools:
@@ -139,6 +169,44 @@ class TestGenerateInvoicePdf:
     def test_telefone_desconhecido(self) -> None:
         r = _tools().generate_invoice_pdf(DESCONHECIDO)
         assert r["gerado"] is False
+
+    def test_mes_referencia_gera_fatura_paga(self) -> None:
+        # SPEC-031: com mes_referencia, gera o PDF daquela fatura — QUALQUER status.
+        r = _tools().generate_invoice_pdf(ANA, mes_referencia="2026-04")
+        assert r["gerado"] is True
+        assert r["mes_referencia"] == "2026-04" and r["status"] == "paga"
+
+    def test_default_sem_filtro_pega_em_aberto(self) -> None:
+        # Regressão SPEC-031: sem filtro segue na mais recente em aberto.
+        r = _tools().generate_invoice_pdf(ANA)
+        assert r["mes_referencia"] == "2026-05" and r["status"] == "em_aberto"
+
+    def test_mes_inexistente_nao_gera(self) -> None:
+        r = _tools().generate_invoice_pdf(ANA, mes_referencia="1990-01")
+        assert r["gerado"] is False and "motivo" in r
+
+    def test_numero_uc_errada_nao_gera(self) -> None:
+        r = _tools().generate_invoice_pdf(ANA, numero_uc="999999999")
+        assert r["gerado"] is False
+
+    def test_mes_e_uc_precisos(self) -> None:
+        r = _tools().generate_invoice_pdf(ANA, mes_referencia="2026-04", numero_uc="100000001")
+        assert r["gerado"] is True and r["status"] == "paga"
+
+
+class TestGenerateInvoicePdfMultiUC:
+    def _t(self) -> CxTools:
+        return CxTools(_FakeMultiUC())
+
+    def test_mes_em_duas_ucs_pede_unidade(self) -> None:
+        # SPEC-031: mês em 2 UCs e sem numero_uc -> desambigua (precisa_unidade).
+        r = self._t().generate_invoice_pdf(MULTI, mes_referencia="2026-05")
+        assert r["gerado"] is False and r.get("precisa_unidade") is True
+        assert set(r["unidades"]) == {"900000001", "900000002"}
+
+    def test_mes_mais_uc_resolve(self) -> None:
+        r = self._t().generate_invoice_pdf(MULTI, mes_referencia="2026-05", numero_uc="900000001")
+        assert r["gerado"] is True and r["status"] == "paga"
 
 
 class TestAccountEvents:

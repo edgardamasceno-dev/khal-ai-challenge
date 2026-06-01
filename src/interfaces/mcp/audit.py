@@ -209,9 +209,15 @@ class AuditedCxTools:
     def get_invoice_status(self, phone: str) -> dict[str, Any]:
         return self._wrap(self._tools.get_invoice_status, "get_invoice_status")(phone)
 
-    def generate_invoice_pdf(self, phone: str, presigned: bool = False) -> dict[str, Any]:
+    def generate_invoice_pdf(
+        self,
+        phone: str,
+        presigned: bool = False,
+        mes_referencia: str | None = None,
+        numero_uc: str | None = None,
+    ) -> dict[str, Any]:
         return self._wrap(self._tools.generate_invoice_pdf, "generate_invoice_pdf")(
-            phone, presigned
+            phone, presigned, mes_referencia, numero_uc
         )
 
     def get_outage_by_region(self, bairro: str) -> dict[str, Any]:

@@ -14,6 +14,13 @@ networks:
     internal: true
   egressnet:
     internal: true
+  # SPEC-030: ponte backend/worker <-> Omni API do sandbox (resolução LID→telefone do
+  # find_customer + envio proativo SPEC-009). External: criada por `make sandbox-wanet`
+  # (ou `docker network create khal-wanet`). NÃO é interna — também dá ao sandbox a rota
+  # direta do WSS do Baileys (§6.0). O AGENTE segue isolado por TOOL-SCOPING (só MCP +
+  # Bash(omni:*)); esta rede é a SAÍDA do negócio para o Omni, não um caminho do agente.
+  khal-wanet:
+    external: true
 
 services:
   mcp-server:
@@ -36,8 +43,12 @@ services:
     command: ["sleep", "infinity"]
     restart: unless-stopped
     networks:
-      - mcpnet      # so o mcp-server
-      - egressnet   # so o proxy (sem internet direta)
+      mcpnet: {}      # so o mcp-server
+      egressnet: {}   # so o proxy (sem internet direta)
+      # SPEC-030: a Omni API do sandbox fica alcançável como `omni:8882` p/ o backend/worker
+      # (resolução LID + proativo). Alias só de REDE; o agente não ganha rota nova (tool-scoping).
+      khal-wanet:
+        aliases: [omni]
     environment:
       HTTP_PROXY: http://egress-proxy:8888
       HTTPS_PROXY: http://egress-proxy:8888
@@ -48,6 +59,15 @@ services:
       NO_PROXY: mcp-server,localhost,127.0.0.1,mmg.whatsapp.net,.cdn.whatsapp.net,.fna.whatsapp.net
       # MCP interno (mcpnet) consumido pelo agente CX via Claude Code.
       MCP_URL: http://mcp-server:8000/mcp
+      # SPEC-030: key FIXA da Omni API (= OMNI_API_KEY do backend). A API usa esta env como
+      # key primária (packages/api/src/services/api-keys.ts); backend e Omni passam a bater →
+      # resolve_canonical (LID→telefone) autentica, SEM reseed. Vazio = Omni gera key efêmera → 401.
+      OMNI_API_KEY: ${OMNI_API_KEY:-}
+      # CAG (R-08): a kb/ da entrega (montada em /srv/agent-kb, volume abaixo) e
+      # pre-carregada pelo genie-wire.sh no prefixo estavel do prompt — mesma ordem/
+      # formato de src/agent/prompt.py, garantindo paridade eval<->producao (M-07).
+      # Sem este mount o bloco CAG some e o agente cai no search_knowledge_base.
+      WIRE_KB: /srv/agent-kb
       # R-05 (cold-start estrutural): pgdata do Genie num caminho dedicado, montado
       # em VOLUME NOMEADO (abaixo), p/ sobreviver a `--force-recreate`. Fica FORA de
       # ~/.genie p/ não cobrir o config.json (setupComplete) gravado no build.
@@ -56,6 +76,9 @@ services:
     volumes:
       # Persona da entrega (fonte única do AGENTS.md do agente CX), só leitura.
       - ./agent:/srv/agent-src:ro
+      # CAG (R-08/M-07): a kb/ da entrega pré-carregada no prompt do agente (ver WIRE_KB),
+      # em path dedicado (sem nested-mount sobre o agent-src ro), só leitura.
+      - ./kb:/srv/agent-kb:ro
       # R-20: hooks de guardrail determinístico + settings do Claude Code (escopo
       # user), só leitura. O genie-wire.sh copia o settings.json p/ ~/.claude.
       # (paths relativos ao docker-compose.yml base, na raiz da entrega).
@@ -68,6 +91,20 @@ services:
       - genie-pgdata:/home/node/.genie-pgdata
     depends_on:
       - egress-proxy
+
+  # SPEC-030: backend e worker entram na khal-wanet p/ alcançar a Omni API do sandbox
+  # (resolver LID→telefone no find_customer + envio proativo SPEC-009). Mantêm a `default`
+  # (appnet) p/ o resto do negócio. Não dá acesso novo do AGENTE ao negócio — o agente
+  # segue restrito por tool-scoping; é só a rota de SAÍDA backend/worker → Omni.
+  backend:
+    networks:
+      default: {}
+      khal-wanet: {}
+
+  notifications-worker:
+    networks:
+      default: {}
+      khal-wanet: {}
 
 volumes:
   claude-home:

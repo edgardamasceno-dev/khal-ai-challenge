@@ -136,6 +136,40 @@ if [ -n "$WARM_POOL_PHONES" ]; then
   ) &
 fi
 
+# ---------------------------------------------------------------------------
+# 5b. Claude Code: garante o onboarding marcado (idempotente, sobrevive a recreate)
+# ---------------------------------------------------------------------------
+# O token do `claude login` persiste no volume claude-home (~/.claude/.credentials.json),
+# mas o ESTADO DE ONBOARDING vive em ~/.claude.json (arquivo IRMÃO, FORA do volume) e é
+# RESETADO a cada `--force-recreate` -> o spawn TUI do agente (Genie) cai na tela "Select
+# login method" mesmo com credencial válida (o `claude -p` headless já funciona). Aqui, se
+# houver credencial, garantimos hasCompletedOnboarding=true (+ theme) ANTES do serve, p/ o
+# spawn não parar no onboarding. Só toca essas flags; NÃO mexe na credencial. Sem credencial
+# não faz nada (o operador ainda precisa do `claude login` — RUNBOOK Etapa 2). Análogo ao
+# setupComplete do Genie semeado no Dockerfile; aqui é em runtime por ~/.claude.json ser efêmero.
+CLAUDE_HOME="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if [ -f "$CLAUDE_HOME/.credentials.json" ] && command -v node >/dev/null 2>&1; then
+  node -e '
+    const fs=require("fs"),os=require("os"),p=os.homedir()+"/.claude.json";
+    let d={}; try { d=JSON.parse(fs.readFileSync(p,"utf8")); } catch(_) {}
+    let changed=false;
+    if (d.hasCompletedOnboarding!==true){ d.hasCompletedOnboarding=true; changed=true; }
+    if (!d.theme){ d.theme="dark"; changed=true; }
+    // Pre-aceita o "trust dialog" (Is this a project you trust?) das pastas do agente
+    // (SPEC-030): o spawn do Genie roda em /srv/omni/agents/luz-do-vale e, num ~/.claude.json
+    // resetado pelo recreate, o 1o turno TRAVA na pergunta de trust (nao ha humano p/ responder).
+    d.projects = d.projects || {};
+    for (const dir of ["/srv/omni","/srv/omni/agents/luz-do-vale"]) {
+      const pr = d.projects[dir] = d.projects[dir] || {};
+      if (pr.hasTrustDialogAccepted!==true){ pr.hasTrustDialogAccepted=true; changed=true; }
+    }
+    if (changed) fs.writeFileSync(p, JSON.stringify(d));
+    process.stdout.write("onboarding="+d.hasCompletedOnboarding+" trust="+Object.keys(d.projects).length+"dirs"+(changed?" (ajustado)":" (ja ok)"));
+  ' 2>/dev/null | sed 's/^/[sandbox-up] claude onboarding+trust: /'; echo
+else
+  log "claude: sem credencial em $CLAUDE_HOME — faça claude login (RUNBOOK Etapa 2); onboarding não tocado"
+fi
+
 log "genie serve start --headless"
 # NOTA (corrida no spawn a frio): a PRIMEIRA omni.message de um chat cria a sessão
 # tmux do agente, mas pode não entrar na TUI a tempo (a entrega corre com o

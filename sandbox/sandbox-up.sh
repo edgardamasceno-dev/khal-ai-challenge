@@ -23,11 +23,33 @@ PG_ROOT="$HOME/.pgserve/bin/$PK"
 PGBIN="$PG_ROOT/bin"
 export LD_LIBRARY_PATH="$PG_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-GENIE_PGDATA="$HOME/.genie/pgdata"
+# R-05 (cold-start estrutural): GENIE_PGDATA é configurável por env para poder
+# apontar a um VOLUME NOMEADO (compose.sandbox.yml) e sobreviver a
+# `--force-recreate`. Default = caminho legado no FS do container (reversível:
+# sem o volume, o comportamento é exatamente o de antes). Fica FORA de
+# `~/.genie` de propósito, p/ não cobrir o config.json (setupComplete) do build.
+GENIE_PGDATA="${GENIE_PGDATA:-$HOME/.genie/pgdata}"
 GENIE_PG_PORT="${GENIE_PG_PORT:-19642}"
 
 pg_ready() { grep -q "ready to accept connections" "$1" 2>/dev/null; }
 wait_log() { local f="$1" pat="$2" n="${3:-60}"; for _ in $(seq 1 "$n"); do grep -q "$pat" "$f" 2>/dev/null && return 0; sleep 0.25; done; return 1; }
+
+# ---------------------------------------------------------------------------
+# 0. R-05: garante que $GENIE_PGDATA é gravável pelo `node` (non-root).
+# ---------------------------------------------------------------------------
+# Um volume nomeado montado num path que NÃO existia na imagem nasce root-owned,
+# e o `initdb` (non-root) falharia. Em vez de quebrar o sandbox que já funciona,
+# fazemos FALLBACK reversível para o path legado efêmero, com aviso. Quando o
+# mountpoint é node-gravável (volume herdou dono node, p.ex. dir pré-criado no
+# Dockerfile), a persistência entre `--force-recreate` fica ativa.
+mkdir -p "$GENIE_PGDATA" 2>/dev/null || true
+if [ ! -w "$GENIE_PGDATA" ]; then
+  log "AVISO: $GENIE_PGDATA não é gravável (volume root-owned?); usando FS efêmero."
+  log "       p/ persistir o cold-start, garanta o dir node-owned (ver RUNBOOK R-05)."
+  GENIE_PGDATA="$HOME/.genie/pgdata"
+  mkdir -p "$GENIE_PGDATA"
+fi
+log "GENIE_PGDATA=$GENIE_PGDATA"
 
 # ---------------------------------------------------------------------------
 # 1. Postgres dedicado do Genie (force-TCP em 127.0.0.1:$GENIE_PG_PORT)
@@ -78,11 +100,59 @@ if [ -x /srv/genie-wire.sh ]; then
   bash /srv/genie-wire.sh || log "aviso: genie-wire.sh retornou erro (segue)"
 fi
 
+# ---------------------------------------------------------------------------
+# 5. R-05: WARM-POOL determinístico (opt-in) — aquece o pane de cada persona-âncora
+# ---------------------------------------------------------------------------
+# A corrida no spawn a frio (NOTA abaixo) some quando a sessão já está quente. O
+# warm-pool publica 1 `omni.message` SINTÉTICA de aquecimento por telefone-âncora
+# DEPOIS que o serve sobe, forçando spawn+resume — o 1º turno REAL do cliente cai
+# numa sessão já ativa (sem perder o 1º "oi" na corrida do bootstrap). Casado com
+# o `--resume` do Genie + pgdata persistente (R-05), o cold-start é pago uma vez.
+#
+# REVERSÍVEL/opt-in: $WARM_POOL_PHONES vazio (default) = warm-pool DESLIGADO,
+# comportamento idêntico ao de antes. Formato: telefones separados por espaço/vírgula
+# (use as personas-âncora do .env, ex.: "555199990001 555199990002").
+WARM_POOL_PHONES="${WARM_POOL_PHONES:-}"
+WARM_POOL_DELAY="${WARM_POOL_DELAY:-8}"
+WARM_POOL_MSG="${WARM_POOL_MSG:-oi}"
+if [ -n "$WARM_POOL_PHONES" ]; then
+  log "warm-pool agendado p/ [$WARM_POOL_PHONES] (delay ${WARM_POOL_DELAY}s)"
+  (
+    sleep "$WARM_POOL_DELAY"
+    for ph in $(printf '%s' "$WARM_POOL_PHONES" | tr ',' ' '); do
+      [ -n "$ph" ] || continue
+      ( cd /srv/genie && WARM_PH="$ph" WARM_MSG="$WARM_POOL_MSG" bun -e '
+        import { connect, StringCodec } from "nats";
+        const sc = StringCodec();
+        const nc = await connect({ servers: "localhost:4222" });
+        const ph = process.env.WARM_PH;
+        nc.publish(`omni.message.warmpool.${ph}`, sc.encode(JSON.stringify({
+          content: process.env.WARM_MSG, sender: ph, chatId: ph,
+          instanceId: "warmpool", agent: "luz-do-vale"
+        })));
+        await nc.drain();
+      ' >/tmp/warmpool.log 2>&1 ) && log "warm-pool: aquecido $ph" || log "warm-pool: falha $ph (segue)"
+    done
+  ) &
+fi
+
 log "genie serve start --headless"
 # NOTA (corrida no spawn a frio): a PRIMEIRA omni.message de um chat cria a sessão
 # tmux do agente, mas pode não entrar na TUI a tempo (a entrega corre com o
 # bootstrap do Claude Code). A SEGUNDA mensagem (sessão já ativa) entra via
-# deliver() e roda normal. Mitigação no E2E/demo: reenviar a 1ª mensagem, ou
-# mandar um "oi" de aquecimento antes da mensagem real. Ver poc/sandbox/RUNBOOK.md.
+# deliver() e roda normal. Mitigação no E2E/demo: reenviar a 1ª mensagem, mandar
+# um "oi" de aquecimento, ou habilitar o WARM-POOL acima ($WARM_POOL_PHONES).
+# Ver sandbox/RUNBOOK.md §7 (R-05).
+#
+# NOTA (heartbeat anti-nudge): turnos longos (PDF/multi-tool) não podem morrer no
+# nudge de 120s. O `genie serve` emite o `agent-heartbeat` (~30s) que mantém o
+# pane vivo; validar ao vivo nos logs do serve (ver RUNBOOK §7).
+#
+# NOTA (invalidação de sessão por hash, R-05): o `--resume` reanexa o pane do
+# chat; se a persona/tool-set mudou, a sessão antiga tem prompt obsoleto. O
+# fingerprint determinístico (`src/agent/session_hash.py::session_fingerprint`)
+# é a base p/ invalidar (clear-session) quando o hash diverge — função PURA
+# testada offline; o disparo aqui é CONFIG + validação ao vivo (o sandbox não
+# monta `src/` Python). Ver RUNBOOK §7.
 cd /srv/omni
 exec genie serve start --headless --no-interactive --no-tui

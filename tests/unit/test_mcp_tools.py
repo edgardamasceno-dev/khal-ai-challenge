@@ -128,3 +128,38 @@ class TestGenerateInvoicePdf:
     def test_telefone_desconhecido(self) -> None:
         r = _tools().generate_invoice_pdf(DESCONHECIDO)
         assert r["gerado"] is False
+
+
+class TestConversationContext:
+    """get_conversation_context (R-03 / SPEC-022): memoria read-only do titular."""
+
+    def test_retorna_contexto_do_titular(self) -> None:
+        r = _tools().get_conversation_context(ANA)
+        assert r["encontrado"] is True and r["titular"] == "Ana Souza"
+        chaves = {item["chave"] for item in r["itens"]}
+        assert "proativo.pagamento.confirmado" in chaves
+        assert r["total"] == len(r["itens"]) >= 1
+
+    def test_itens_do_mais_recente_para_o_mais_antigo(self) -> None:
+        # A memoria mais recente (atualizado_em maior) vem primeiro.
+        itens = _tools().get_conversation_context(ANA)["itens"]
+        ts = [item["atualizado_em"] for item in itens]
+        assert ts == sorted(ts, reverse=True)
+        assert itens[0]["chave"] == "proativo.pagamento.confirmado"
+
+    def test_telefone_desconhecido_nao_consulta_memoria(self) -> None:
+        # Guardrail: telefone sem titular -> encontrado=False e nao expoe memoria.
+        r = _tools().get_conversation_context(DESCONHECIDO)
+        assert r["encontrado"] is False
+        assert "itens" not in r
+
+    def test_nao_vaza_memoria_de_outro_titular(self) -> None:
+        # Carlos (titular valido, sem memoria) nao recebe a memoria da Ana.
+        r = _tools().get_conversation_context(CARLOS)
+        assert r["encontrado"] is True and r["titular"] == "Carlos Lima"
+        assert r["itens"] == [] and r["total"] == 0
+
+    def test_best_effort_sem_memoria(self) -> None:
+        # Titular sem nenhuma memoria gravada -> itens vazios, sem quebrar.
+        r = _tools().get_conversation_context(CARLOS)
+        assert r["encontrado"] is True and r["itens"] == []

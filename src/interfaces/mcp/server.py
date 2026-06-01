@@ -124,5 +124,17 @@ def search_knowledge_base(query: str) -> dict[str, Any]:
     return _tools.search_knowledge_base(query)
 
 
+@mcp.tool()
+def get_conversation_context(phone: str) -> dict[str, Any]:
+    """Le o historico canonico recente do titular (read-only) pelo telefone.
+
+    Devolve fatos ja registrados deterministicamente (ADR-0005): pagamento
+    confirmado, interrupcao aberta/encerrada, ultimo protocolo. Chame no PRIMEIRO
+    turno (junto de find_customer_by_phone) para NAO repetir o que ja foi resolvido.
+    Nao escreve nem muta estado.
+    """
+    return _tools.get_conversation_context(phone)
+
+
 if __name__ == "__main__":
     mcp.run(transport="streamable-http")

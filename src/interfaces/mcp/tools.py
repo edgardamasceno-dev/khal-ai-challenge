@@ -12,7 +12,12 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
 from src.interfaces.mcp.ports import LegacyApiClient, LegacyValidationError
+
+# Quantidade default de itens de memoria devolvidos ao agente (mais recentes).
+# Nao e input do agente: a tool decide o teto (R-03 / SPEC-022).
+_MEMORIA_LIMITE = 10
 
 
 class CxTools:
@@ -190,3 +195,51 @@ class CxTools:
                 for r in resultados
             ],
         }
+
+    def get_conversation_context(self, phone: str) -> dict[str, Any]:
+        """Le a memoria canonica recente do titular (read-only). Fecha o loop
+        proativo<->reativo do ADR-0005: fatos gravados deterministicamente pelo
+        ProactiveService/worker (pagamento confirmado, interrupcao aberta/encerrada,
+        ultimo protocolo) ficam legiveis ao agente no abrir da conversa (R-03).
+
+        Guardrail deterministico, identico as demais tools:
+        (1) resolve o titular SEMPRE pelo `phone` do remetente (contexto confiavel do
+            canal), nunca por id/telefone citado pelo cliente;
+        (2) se nao resolve titular -> {"encontrado": False} e NAO consulta memoria;
+        (3) le APENAS a memoria do chat do proprio titular. A memoria e chaveada por
+            chat_id == telefone E.164 (ADR-0005); a tool usa o telefone canonico
+            NORMALIZADO (variantes do nono digito), nunca o telefone cru recebido.
+
+        Somente-leitura: NAO escreve, NAO muta estado.
+        """
+        titular = self._api.find_customer(phone)
+        if titular is None:
+            return {"encontrado": False, "motivo": "Telefone nao identificado."}
+        itens = self._ler_memoria_do_titular(phone)
+        recentes = sorted(
+            itens, key=lambda m: str(m.get("atualizado_em") or ""), reverse=True
+        )[:_MEMORIA_LIMITE]
+        return {
+            "encontrado": True,
+            "titular": titular["nome"],
+            "itens": [
+                {
+                    "chave": m["chave"],
+                    "valor": m["valor"],
+                    "atualizado_em": m["atualizado_em"],
+                }
+                for m in recentes
+            ],
+            "total": len(recentes),
+        }
+
+    def _ler_memoria_do_titular(self, phone: str) -> list[dict[str, Any]]:
+        """Le a memoria do chat do titular pelas variantes canonicas do telefone
+        (com/sem nono digito, SPEC-015), NUNCA pelo telefone cru. Para na primeira
+        variante com memoria. Sem memoria -> lista vazia (best-effort, nao quebra)."""
+        canonico = normalizar_msisdn(phone)
+        for variante in variantes_nono_digito(canonico):
+            itens = self._api.get_conversation_memory(variante, _MEMORIA_LIMITE)
+            if itens:
+                return itens
+        return []

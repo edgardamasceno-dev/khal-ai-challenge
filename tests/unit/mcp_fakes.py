@@ -103,6 +103,24 @@ _INVOICES: dict[str, list[dict[str, Any]]] = {
 }
 
 
+# chat_id (telefone canonico E.164) -> memoria proativa (ADR-0005).
+# Ana tem memoria; Carlos nao. Chaves no padrao proativo.<tipo>.<subtipo>.
+_MEMORY: dict[str, list[dict[str, Any]]] = {
+    "555199990001": [
+        {
+            "chave": "proativo.outage.encerrada",
+            "valor": {"texto": "Energia restabelecida no Jardim das Flores."},
+            "atualizado_em": "2026-05-30T11:00:00Z",
+        },
+        {
+            "chave": "proativo.pagamento.confirmado",
+            "valor": {"texto": "Pagamento da fatura 2026-05 confirmado."},
+            "atualizado_em": "2026-05-30T12:00:00Z",
+        },
+    ],
+}
+
+
 class FakeLegacyApiClient:
     def __init__(self) -> None:
         self._tickets: dict[str, dict[str, Any]] = {}  # protocolo -> ticket
@@ -181,6 +199,9 @@ class FakeLegacyApiClient:
         h = {"id": f"HO-{len(self.handoffs) + 1}", "status": "pendente", **payload}
         self.handoffs.append(h)
         return h
+
+    def get_conversation_memory(self, chat: str, limit: int = 10) -> list[dict[str, Any]]:
+        return list(_MEMORY.get(chat, []))[:limit]
 
     def search_kb(self, query: str) -> list[dict[str, Any]]:
         q = query.lower()

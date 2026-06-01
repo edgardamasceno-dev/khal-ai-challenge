@@ -78,3 +78,14 @@ class HttpxLegacyApiClient:
         r.raise_for_status()
         data: list[dict[str, Any]] = r.json()
         return data
+
+    def get_conversation_memory(self, chat: str, limit: int = 10) -> list[dict[str, Any]]:
+        """Memoria canonica do chat do titular (GET /conversations/{chat}/memory).
+
+        `chat` e o telefone canonico normalizado (chat_id == telefone E.164, ADR-0005).
+        Envia `?limit=` por cortesia ao servidor; a truncagem definitiva ocorre no
+        CxTools (o router legado pode ignorar o parametro sem quebrar)."""
+        r = self._c.get(f"/conversations/{chat}/memory", params={"limit": limit})
+        r.raise_for_status()
+        data: list[dict[str, Any]] = r.json()
+        return data

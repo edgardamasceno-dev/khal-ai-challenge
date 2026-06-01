@@ -9,6 +9,26 @@ class LegacyValidationError(Exception):
     """Erro de validacao do backend legado (HTTP 422)."""
 
 
+class BackendUnavailableError(Exception):
+    """Backend legado indisponivel/instavel (M-03): timeout, recusa de conexao,
+    erro de transporte ou 5xx do servidor.
+
+    Erro de INFRAESTRUTURA, distinto de `LegacyValidationError` (regra de
+    negocio). O adapter (`HttpxLegacyApiClient`) traduz a falha bruta de rede
+    nesta excecao tipada; as tools (`CxTools`) a capturam e devolvem um shape de
+    erro amigavel ({'encontrado'/'ok'/'gerado': False, 'erro': 'instabilidade'})
+    em vez de propagar um stacktrace cru — o agente reporta instabilidade
+    temporaria sem alucinar dado ausente nem expor a stack.
+
+    `tool` carrega o nome da tool em curso (definido em `CxTools`, nao no client)
+    para correlacao/log; o `__cause__` (encadeado por `raise ... from`) preserva
+    a excecao httpx original para a auditoria/depuracao."""
+
+    def __init__(self, mensagem: str = "backend indisponivel", *, tool: str | None = None) -> None:
+        super().__init__(mensagem)
+        self.tool = tool
+
+
 @runtime_checkable
 class LegacyApiClient(Protocol):
     def find_customer(self, phone: str) -> dict[str, Any] | None: ...

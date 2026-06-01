@@ -29,6 +29,11 @@ read-only, ambas resolvendo o titular pelo telefone do remetente:
 - ``get_chat_history`` — TRANSCRIÇÃO conversacional crua (o que foi DITO no
   WhatsApp/Omni), reusando o transcript do operador (SPEC-018). Recuperação
   pós-cold-start, quando a sessão Genie reseta a janela curta/volátil.
+
+Insights de consumo (R-17 / SPEC-025): ``get_consumption_insights`` — 12ª tool,
+read-only, sumariza ~24 meses de ``consumo_kwh`` do titular (média/tendência/
+sazonalidade/pico) sobre o histórico já disponível via ``list_invoices``, sem
+endpoint REST novo nem LLM. Mesmo guardrail por telefone das demais tools.
 """
 
 from __future__ import annotations
@@ -56,6 +61,7 @@ TOOL_NAMES: tuple[str, ...] = (
     "search_knowledge_base",
     "get_account_events",
     "get_chat_history",
+    "get_consumption_insights",
 )
 
 

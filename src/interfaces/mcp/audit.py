@@ -17,6 +17,7 @@ engole nem mascara o erro de negocio).
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import logging
 import re
@@ -26,6 +27,7 @@ from typing import Any
 
 from src.application.ports import AuditRecord, ToolCallAuditSink
 from src.interfaces.mcp.tools import CxTools
+from src.interfaces.mcp.trace import get_trace_id
 
 logger = logging.getLogger("luz_do_vale.mcp.audit")
 
@@ -163,9 +165,11 @@ def _nomear_args(
     """Liga args posicionais aos nomes de parametro (ignora `self`), uniao com kwargs.
 
     Permite mascarar por nome de chave (ex.: 'phone') de forma robusta a chamadas
-    posicionais ou nomeadas.
-    """
-    nomes = list(fn.__code__.co_varnames[: fn.__code__.co_argcount])
+    posicionais ou nomeadas. Desembrulha (`inspect.unwrap`) a tool decorada — ex.:
+    o `_degrada_se_indisponivel` (M-03) embrulha o metodo com `functools.wraps`, e
+    sem o unwrap leriamos `(*args, **kwargs)` do wrapper em vez de `(self, phone)`."""
+    alvo = inspect.unwrap(fn)
+    nomes = list(alvo.__code__.co_varnames[: alvo.__code__.co_argcount])
     if nomes and nomes[0] == "self":
         nomes = nomes[1:]
     nomeados: dict[str, Any] = dict(zip(nomes, args, strict=False))
@@ -174,7 +178,7 @@ def _nomear_args(
 
 
 class AuditedCxTools:
-    """Decorator de `CxTools` que instrumenta os 11 metodos-tool (T3) sem mudar
+    """Decorator de `CxTools` que instrumenta os 12 metodos-tool (T3) sem mudar
     assinatura nem retorno. Cada chamada gera UM `AuditRecord` (log + sink
     best-effort). Guardrails e contratos das tools permanecem intactos.
 
@@ -189,7 +193,12 @@ class AuditedCxTools:
     def _wrap(
         self, metodo: Callable[..., dict[str, Any]], nome: str
     ) -> Callable[..., dict[str, Any]]:
-        return instrumentar(metodo, tool_name=nome, sink=self._sink)
+        # Leitura TARDIA do trace_id (R-10): `_wrap` roda a cada chamada de tool,
+        # entao `get_trace_id()` ja captura o trace do request corrente, publicado
+        # pelo TraceIdMiddleware no ContextVar. None fora de um request com trace
+        # (ex.: chamada direta em teste) — a auditoria grava trace_id NULL, sem
+        # quebrar. Nao muda a assinatura de nenhuma @mcp.tool nem do CxTools.
+        return instrumentar(metodo, tool_name=nome, sink=self._sink, trace_id=get_trace_id())
 
     def find_customer_by_phone(self, phone: str) -> dict[str, Any]:
         return self._wrap(self._tools.find_customer_by_phone, "find_customer_by_phone")(phone)
@@ -229,3 +238,6 @@ class AuditedCxTools:
 
     def get_chat_history(self, phone: str) -> dict[str, Any]:
         return self._wrap(self._tools.get_chat_history, "get_chat_history")(phone)
+
+    def get_consumption_insights(self, phone: str) -> dict[str, Any]:
+        return self._wrap(self._tools.get_consumption_insights, "get_consumption_insights")(phone)

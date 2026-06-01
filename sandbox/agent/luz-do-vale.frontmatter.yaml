@@ -34,6 +34,7 @@ permissions:
     - mcp__luz-do-vale__search_knowledge_base
     - mcp__luz-do-vale__get_account_events
     - mcp__luz-do-vale__get_chat_history
+    - mcp__luz-do-vale__get_consumption_insights
     # Bash ESCOPADO só aos verbos de resposta do Omni (omni say/done/react).
     # O Genie responde o WhatsApp via `omni ...`; sem isto, o agente não responde.
     # Bash arbitrário NÃO é auto-aprovado (permission-mode auto) e a rede só-MCP

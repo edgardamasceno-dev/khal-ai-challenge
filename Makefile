@@ -1,4 +1,4 @@
-.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-down agent-evals
+.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-down agent-evals
 
 # SHAs pinados dos repos NAO-confiaveis (docs/07) que o Dockerfile do sandbox copia.
 GENIE_PIN := a407a2e2
@@ -51,7 +51,28 @@ sandbox-up: sandbox-libs
 	docker build -f sandbox/Dockerfile -t khal-sandbox:base .
 	docker build -t khal-egress-proxy sandbox/egress
 	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy sandbox
-	@echo ">> sandbox no ar. Proximo (interativo): docker exec -it khal-sandbox claude login — ver sandbox/RUNBOOK.md"
+	@echo ">> sandbox no ar (isolado). Fluxo: make sandbox-login -> make sandbox-serve -> make sandbox-smoke (ver sandbox/RUNBOOK.md)"
+
+# Etapa 2 (RUNBOOK): login INTERATIVO do Claude Code dentro do sandbox (device-flow,
+# persiste no volume claude-home — ADR-0007). Rode no SEU terminal. Idempotente.
+sandbox-login:
+	docker exec -it khal-sandbox claude login
+
+# Etapas 3+4 (RUNBOOK): wiring do agente CX (tool-scoping + MCP) + daemons do sandbox
+# (Postgres-genie + NATS/JetStream + Omni API + genie serve), tudo DETERMINISTICO. Roda UMA
+# vez sobre um sandbox recem-subido (make sandbox-up). Pre-req: make sandbox-login. Espera o
+# "genie serve is running" e falha (exit 1) se nao subir em 120s.
+sandbox-serve:
+	docker exec -d khal-sandbox sh -c 'bash /srv/sandbox-up.sh > /tmp/up.log 2>&1'
+	@docker exec khal-sandbox sh -c 'for i in $$(seq 1 120); do grep -q "genie serve is running" /tmp/up.log 2>/dev/null && break; sleep 1; done; \
+	  if grep -q "genie serve is running" /tmp/up.log; then echo ">> daemons no ar (genie serve running). E2E interno: make sandbox-smoke"; \
+	  else echo "FALHA: genie serve nao subiu em 120s"; tail -25 /tmp/up.log; exit 1; fi'
+
+# Etapa 5 (RUNBOOK): E2E interno SEM WhatsApp. Publica uma omni.message sintetica de uma
+# persona do seed e PROVA a malha NATS -> bridge -> spawn do agente -> tool-calls no MCP.
+# Self-test reproduzivel (exit != 0 se a malha nao fechar). A entrega real e a Etapa 6.
+sandbox-smoke:
+	bash sandbox/smoke.sh
 
 sandbox-down:
 	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml down

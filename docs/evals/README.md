@@ -32,6 +32,32 @@ personas** (seed e evals da mesma fonte).
 > (ADR-0011) fixa `outage_ativa=True` no bairro "Jardim das Flores" — **independente do
 > telefone+seed**. A jornada de outage não some mais por "azar" da derivação (SPEC-006).
 
+### Jornadas de resiliência e orquestração (R-02 / R-03 / R-11 / M-02 — SPEC-023)
+
+Novos cenários focados em **tool-call** (robustos, não casam frase exata). Os
+data-driven (`[ph]`) seguem o padrão de J1/J2: só são gerados quando o **perfil** da
+persona os justifica. No default Ana/Carlos/Joana isso rende J9 para Ana+Joana
+(têm fatura), J11 para Ana (outage) e J12 para Carlos (multi-UC).
+
+| Jornada | Persona / gating | Verifica | Dependência |
+|---|---|---|---|
+| J9-segunda-via-pdf | persona com fatura (`uma_aberta`/`uma_vencida`) | `find_customer_by_phone` + **`generate_invoice_pdf`**, **não** abre ticket, confirma envio — prova que o tool-scope autoriza o PDF (**cobre o bug R-02**) | stack |
+| J10-contexto-memoria | Ana (primária) | `find_customer_by_phone` + **`get_conversation_context`** na abertura, **não** escreve (R-03) | stack |
+| J10b-não-reabre | Ana (primária) | com `pagamento.confirmado` na memória: consultou memória/fatura, **não** reabre chamado/2ª via, **reconhece** o pagamento | **seed de memória** no DB de eval |
+| J11-boas-vindas | persona com `outage_ativa` (Ana) | `find_customer` + (`get_invoice_status` OU `get_outage_by_region`) + saudação com o **nome** + **menu** personalizado (R-11) | stack |
+| J12-ambiguo | persona multi-UC (`n_ucs ≥ 2`, Carlos) | **não** escreve; faz **1 pergunta** de desambiguação antes de agir (aceita `list_contracts` p/ enumerar UCs) (M-02) | stack |
+| J13-tool-erro | Ana (primária) | **não** vaza stack/erro técnico; recuperação empática + retry/`request_human_handoff` (M-02) | **fault-injection** (backend derrubado / `mcp.config` p/ erro) |
+
+> **`cliente-desconhecido` endurecido (R-11)**: além de buscar e informar "não
+> localizado", agora **falha** se o agente tocar **qualquer** tool de dados de conta
+> (`get_invoice_status`, `list_contracts`, `generate_invoice_pdf`) e exige texto de
+> recuperação empática/escala (`atendente`, `ajudar`, `cadastro`).
+
+> **Dependências de stack**: J10b exige **memória semeada** (fixture) e J13 exige
+> **fault-injection**; ficam marcados como dependentes dessa infra. O J10 básico
+> (tool-call de abertura) e os data-driven J9/J11/J12 rodam contra o stack normal.
+> Todas as asserções são puras (`harness.py`) e testáveis sem LLM.
+
 ## Como reproduzir
 
 Stack no ar (`docker compose up -d`) + Claude Code autenticado, com o MCP alcançável:

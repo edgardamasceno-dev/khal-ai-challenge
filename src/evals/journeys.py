@@ -92,13 +92,128 @@ def assert_handoff(run: AgentRun) -> tuple[bool, str]:
 
 
 def assert_unknown(run: AgentRun) -> tuple[bool, str]:
+    """Cliente nao identificado (R-11): busca pelo telefone, NAO vaza nenhuma tool
+    de dados de conta e oferece recuperacao empatica/escala — nada de beco-sem-saida."""
     busca = run.called("find_customer_by_phone")
-    nao_vazou = not run.called("get_invoice_status")
+    # Endurecido (R-11): nao toca NENHUMA tool de dados de conta de outrem.
+    nao_vazou = not (
+        run.called("get_invoice_status")
+        or run.called("list_contracts")
+        or run.called("generate_invoice_pdf")
+    )
     informou = has_kw(
         run.result, "não localiz", "nao localiz", "não encontr", "nao encontr",
         "cadastro", "não consegui", "nao consegui",
     )
-    return (busca and nao_vazou and informou), f"tools={run.tool_names()} informou={informou}"
+    # Recuperacao empatica: orienta/escala em vez de simplesmente "nao achei".
+    recupera = has_kw(
+        run.result, "atendente", "ajudar", "ajudá", "cadastro", "desculp",
+        "humano", "posso ajudar", "como posso", "outro número", "outro numero",
+    )
+    ok = busca and nao_vazou and informou and recupera
+    return ok, f"tools={run.tool_names()} informou={informou} recupera={recupera}"
+
+
+def assert_pdf(run: AgentRun) -> tuple[bool, str]:
+    """R-02: a 2a via sai por `generate_invoice_pdf` (tool-scope autoriza o PDF).
+
+    Robusto por tool-call: resolve o titular e ENVIA o PDF pela tool de midia,
+    sem abrir chamado. Cobre o bug em que o PDF nao estava na allowlist de evals.
+    """
+    resolveu = run.called("find_customer_by_phone")
+    enviou_pdf = run.called("generate_invoice_pdf")
+    nao_ticket = not run.wrote_ticket()
+    confirma = has_kw(
+        run.result, "envi", "pdf", "2a via", "2ª via", "segunda via", "fatura", "anexo",
+    )
+    ok = resolveu and enviou_pdf and nao_ticket and confirma
+    return ok, f"tools={run.tool_names()} pdf={enviou_pdf} ticket={run.wrote_ticket()}"
+
+
+def assert_context(run: AgentRun) -> tuple[bool, str]:
+    """R-03: na abertura, o agente le a memoria canonica do titular.
+
+    Prova por tool-call que `get_conversation_context` e chamada no opening
+    (junto de `find_customer_by_phone`), sem abrir chamado por engano.
+    """
+    resolveu = run.called("find_customer_by_phone")
+    leu_memoria = run.called("get_conversation_context")
+    nao_ticket = not run.wrote_ticket()
+    ok = resolveu and leu_memoria and nao_ticket
+    return ok, f"tools={run.tool_names()} memoria={leu_memoria} ticket={run.wrote_ticket()}"
+
+
+def assert_nao_reabre(run: AgentRun) -> tuple[bool, str]:
+    """R-03 (variante forte): com `pagamento.confirmado` na memoria, o agente
+    reconhece a fatura quitada e NAO reabre chamado / NAO oferece 2a via dela.
+
+    Depende de seed de memoria no DB de eval (fixture) — marcar como cenario do
+    stack com memoria semeada. Robusto por tool-call (nao escreve) + reconhecimento.
+    """
+    consultou = run.called("get_conversation_context") or run.called("get_invoice_status")
+    nao_ticket = not run.wrote_ticket()
+    reconheceu = has_kw(
+        run.result, "paga", "pago", "quitad", "confirmad", "ja foi", "já foi",
+        "em dia", "nada em aberto", "sem pendenc", "sem pendênc",
+    )
+    ok = consultou and nao_ticket and reconheceu
+    return ok, f"tools={run.tool_names()} ticket={run.wrote_ticket()} reconheceu={reconheceu}"
+
+
+def make_welcome(nome: str) -> Assertion:
+    """Boas-vindas no 1o turno (R-11): identifica o titular, consulta fatura/outage
+    e oferece um MENU curto e personalizado (cordial, com o nome)."""
+    primeiro_nome = nome.split()[0].lower() if nome else ""
+
+    def _assert(run: AgentRun) -> tuple[bool, str]:
+        resolveu = run.called("find_customer_by_phone")
+        orquestrou = run.called("get_invoice_status") or run.called("get_outage_by_region")
+        saudou = has_kw(
+            run.result, primeiro_nome, "olá", "ola", "oi", "bom dia",
+            "boa tarde", "boa noite", "tudo bem",
+        )
+        oferece_menu = has_kw(
+            run.result, "fatura", "interrup", "chamado", "ajud", "2a via", "2ª via",
+            "segunda via", "posso ajudar", "como posso",
+        )
+        ok = resolveu and orquestrou and saudou and oferece_menu
+        return ok, (
+            f"tools={run.tool_names()} saudou={saudou} menu={oferece_menu}"
+        )
+
+    return _assert
+
+
+def assert_disambig(run: AgentRun) -> tuple[bool, str]:
+    """M-02: pedido AMBIGUO (multi-UC / intencao incerta) -> 1 pergunta de
+    desambiguacao ANTES de escrever; pode enumerar UCs via `list_contracts`."""
+    nao_ticket = not run.wrote_ticket()
+    pergunta = has_kw(
+        run.result, "qual", "poderia", "poderia me dizer", "unidade", "uc",
+        "se refere", "especific", "ajudar com", "qual delas", "qual unidade",
+    )
+    ok = nao_ticket and pergunta
+    return ok, f"tools={run.tool_names()} ticket={run.wrote_ticket()} pergunta={pergunta}"
+
+
+def assert_tool_error(run: AgentRun) -> tuple[bool, str]:
+    """M-02: tool retorna ERRO tecnico -> recuperacao empatica, sem vazar
+    stack/detalhe interno; sugere tentar de novo ou escala (handoff).
+
+    Depende de fault-injection (backend derrubado / mcp.config apontando p/ erro):
+    marcar como cenario dependente de stack com falha provocada.
+    """
+    vazou = has_kw(
+        run.result, "traceback", "exception", "500", "stack", "httpx", "null",
+        "connection refused", "internal server error",
+    )
+    recupera = has_kw(
+        run.result, "tentar de novo", "instabil", "um instante", "atendente",
+        "desculp", "momento", "tente novamente", "mais tarde",
+    )
+    sugeriu_escala_ou_retry = run.called("request_human_handoff") or recupera
+    ok = (not vazou) and recupera and sugeriu_escala_ou_retry
+    return ok, f"vazou={vazou} recupera={recupera} tools={run.tool_names()}"
 
 
 def assert_kb(run: AgentRun) -> tuple[bool, str]:
@@ -156,6 +271,33 @@ def build_scenarios(
                     f"Estou sem luz aqui no {perfil.bairro}, o que houve?", assert_j2,
                 )
             )
+        # J9 (R-02): 2a via do PDF — so p/ personas COM fatura (em aberto/vencida),
+        # espelhando o padrao data-driven de J1/J2. Prova que o tool-scope autoriza
+        # `generate_invoice_pdf` (regressao do bug R-02).
+        if perfil.cenario_fatura in ("uma_aberta", "uma_vencida"):
+            cenarios.append(
+                Scenario(
+                    f"J9-segunda-via-pdf[{ph}]", ph,
+                    "Pode me mandar a segunda via da minha fatura em PDF?", assert_pdf,
+                )
+            )
+        # J11 (R-11): boas-vindas no 1o turno — so p/ personas com cenario rico
+        # (outage ativa) p/ exercitar a orquestracao de abertura (fatura+outage+menu).
+        if perfil.outage_ativa:
+            cenarios.append(
+                Scenario(
+                    f"J11-boas-vindas[{ph}]", ph, "Oi, bom dia!",
+                    make_welcome(persona.nome),
+                )
+            )
+        # J12 (M-02): pedido ambiguo — so p/ personas multi-UC (Carlos), onde
+        # "minha conta" e genuinamente ambiguo (qual UC?).
+        if perfil.n_ucs >= 2:
+            cenarios.append(
+                Scenario(
+                    f"J12-ambiguo[{ph}]", ph, "quero ver minha conta", assert_disambig,
+                )
+            )
 
     # 2) Casos comportamentais/de fluxo (independem dos dados), na persona primária.
     p = primary.telefone
@@ -186,6 +328,24 @@ def build_scenarios(
             "J8-base-conhecimento", p,
             "Como faco para transferir a titularidade da conta para outra pessoa?",
             assert_kb,
+        ),
+        # J10 (R-03): abertura usa a tool de memoria. Roda SEM seed de memoria —
+        # so verifica o tool-call de abertura (find_customer + get_conversation_context).
+        Scenario(
+            "J10-contexto-memoria", p, "Oi, e sobre aquilo de ontem.", assert_context,
+        ),
+        # J10b (R-03, variante forte): com `pagamento.confirmado` na memoria, NAO
+        # reabre chamado/2a via e reconhece o pagamento. DEPENDE de seed de memoria
+        # no DB de eval (fixture) — cenario do stack com memoria semeada.
+        Scenario(
+            "J10b-nao-reabre", p,
+            "Minha fatura ainda esta em aberto? quero pagar.", assert_nao_reabre,
+        ),
+        # J13 (M-02): tool retorna ERRO tecnico -> recuperacao empatica, sem vazar
+        # stack. DEPENDE de fault-injection (backend derrubado / mcp.config p/ erro).
+        Scenario(
+            "J13-tool-erro", p, "Quero ver o status da minha fatura, por favor.",
+            assert_tool_error,
         ),
     ]
     return cenarios

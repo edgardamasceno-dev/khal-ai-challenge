@@ -51,7 +51,7 @@ sandbox-up: sandbox-libs
 	docker build -f sandbox/Dockerfile -t khal-sandbox:base .
 	docker build -t khal-egress-proxy sandbox/egress
 	@docker network create khal-wanet >/dev/null 2>&1 || true
-	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy sandbox backend notifications-worker
+	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --build --force-recreate mcp-server egress-proxy sandbox backend notifications-worker
 	@echo ">> sandbox no ar; backend/worker wired ao Omni (khal-wanet) p/ resolução LID + proativo (SPEC-030)."
 	@echo ">> Fluxo: make sandbox-login -> make sandbox-serve -> make sandbox-smoke (ver sandbox/RUNBOOK.md)"
 

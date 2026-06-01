@@ -8,7 +8,9 @@ Passo a passo de operação: `sandbox/RUNBOOK.md`.
 ## Pré-requisito: clones pinados (untrusted, doc 07)
 
 Os repos `genie`/`omni` são **não-confiáveis para execução** e **não** são versionados
-aqui. Clone-os em `sandbox/libs/` (gitignored) nos commits pinados antes de buildar:
+aqui — ficam em `sandbox/libs/` (gitignored). O **`make sandbox-up` vendoriza automaticamente**
+(alvo `sandbox-libs`: clona só se faltar e fixa nos SHAs pinados `genie@a407a2e2` / `omni@fe155b81`).
+Equivalente manual:
 
 ```bash
 git clone https://github.com/automagik-dev/genie sandbox/libs/genie
@@ -17,23 +19,20 @@ git clone https://github.com/namastexlabs/omni  sandbox/libs/omni
 (cd sandbox/libs/omni  && git checkout fe155b81)
 ```
 
-## Build
+## Build + subir (um comando)
 
 A partir da **raiz do repo de entrega** (`implementation/`):
 
 ```bash
-docker build -f sandbox/Dockerfile -t khal-sandbox:base .   # Genie+Omni+NATS+Claude Code
-docker build -t khal-egress-proxy sandbox/egress            # proxy com allowlist
-```
-
-## Subir (override do compose real)
-
-```bash
-docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d
+make sandbox-up     # vendoriza clones + builda khal-sandbox:base e khal-egress-proxy + sobe o overlay
+make sandbox-down   # derruba so o overlay isolado
 ```
 
 Sobe `database` + `seed` + `backend` + `mcp-server` (em `mcpnet`) + `egress-proxy` +
-`sandbox`. O `sandbox` fica em `sleep infinity` (operador dirige — ver RUNBOOK).
+`sandbox`. O `sandbox` fica em `sleep infinity` (operador dirige — ver RUNBOOK). Equivalente
+manual: `docker build -f sandbox/Dockerfile -t khal-sandbox:base .` + `docker build -t
+khal-egress-proxy sandbox/egress` + `docker compose -f docker-compose.yml -f
+sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy sandbox`.
 
 ## Arquivos
 

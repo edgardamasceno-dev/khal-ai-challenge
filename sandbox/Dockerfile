@@ -107,7 +107,11 @@ OMNI_PACKAGES_DIR=/srv/omni/packages
 EOF
 
 # Genie: jq + wrapper `genie` no PATH (ele faz shell-out de `genie`).
-RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+# python3: runtime do hook de guardrail R-20 (sandbox/agent/hooks/guardrail.py, shebang
+# `#!/usr/bin/env python3`, só stdlib). Sem ele o PreToolUse falha com "python3: not found"
+# e a camada de defesa-em-profundidade do agente fica inerte (os guardrails core seguem
+# server-side no MCP, mas o hook é parte do R-20). --no-install-recommends mantém enxuto.
+RUN apt-get update && apt-get install -y --no-install-recommends jq python3 && rm -rf /var/lib/apt/lists/*
 RUN printf '#!/bin/sh\nexec bun /srv/genie/dist/genie.js "$@"\n' > /usr/local/bin/genie \
     && chmod +x /usr/local/bin/genie
 # Wrapper `omni` no PATH: o agente CX responde o WhatsApp via `omni say`/`omni done`

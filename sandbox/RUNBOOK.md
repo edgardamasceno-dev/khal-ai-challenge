@@ -1,28 +1,47 @@
 # Runbook — Sandbox Omni/Genie + agente CX (login + E2E)
 
 Passo a passo reprodutível para colocar o agente CX `luz-do-vale` atendendo, do
-zero. As etapas **interativas** (login, QR) são suas; as **determinísticas**
-(subir stack, wiring, E2E interno) são automatizáveis.
+zero. As etapas **determinísticas** são `make` targets; as **interativas** (login OAuth,
+pareamento do WhatsApp) são suas e estão marcadas como tal.
 
-Pré-requisitos: Docker; imagem `khal-sandbox:base` buildada
-(`docker build -f sandbox/Dockerfile -t khal-sandbox:base .` a partir da raiz);
-imagem do egress (`docker build -t khal-egress-proxy sandbox/egress`).
+**Fluxo rápido (do zero ao E2E interno provado):**
+
+```bash
+make sandbox-up       # 1. determinístico  — vendor + build + overlay isolado
+make sandbox-login    # 2. INTERATIVO (você) — claude login (device-flow, persiste no volume)
+make sandbox-serve    # 3+4. determinístico — wiring do agente + daemons (NATS/Omni/genie serve)
+make sandbox-smoke    # 5. determinístico  — self-test: prova NATS→bridge→agente→MCP (exit≠0 se falhar)
+# 6. WhatsApp real (INTERATIVO, 2 celulares) — ver Etapa 6 abaixo.   Derrubar tudo: make sandbox-down
+```
+
+> `make sandbox-up` recria o container, mas o login (volume `claude-home`) e o pgdata do Genie
+> (R-05) **sobrevivem**; o `sandbox-serve` re-marca o onboarding do Claude automaticamente — então
+> repetir o ciclo **não** exige refazer o `claude login` (só se trocar de conta / volume novo).
+
+Pré-requisitos: Docker. A parte **determinística** (vendorizar os clones pinados de Omni/Genie
+em `sandbox/libs/`, buildar as imagens `khal-sandbox:base` e `khal-egress-proxy` + subir o
+overlay isolado) é encapsulada em **`make sandbox-up`** (Etapa 1) — inclusive o vendoring
+(`sandbox-libs`: clona se faltar e fixa em `genie@a407a2e2` / `omni@fe155b81`, doc 07).
+Equivalente manual: clones em `sandbox/libs/` (ver `sandbox/README.md`) +
+`docker build -f sandbox/Dockerfile -t khal-sandbox:base .` (a partir da raiz) +
+`docker build -t khal-egress-proxy sandbox/egress`.
 
 ---
 
 ## 1. Subir o stack (determinístico)
 
-A partir da raiz do repo (`implementation/`):
+A partir da raiz do repo (`implementation/`), um comando builda as imagens do sandbox
+e sobe o overlay isolado:
 
 ```bash
-docker compose \
-  -f docker-compose.yml \
-  -f sandbox/compose.sandbox.yml \
-  up -d --force-recreate mcp-server egress-proxy sandbox
+make sandbox-up
 ```
 
+Equivale a vendorizar `sandbox/libs/` (`make sandbox-libs`) + `docker build` das 2 imagens +
+`docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate
+mcp-server egress-proxy sandbox`.
 Sobe: `database`, `backend`, `mcp-server` (em `mcpnet`), `egress-proxy`, `sandbox`.
-O `sandbox` fica em `sleep infinity` (operador dirige os passos abaixo).
+O `sandbox` fica em `sleep infinity` (operador dirige os passos abaixo). Derrubar: `make sandbox-down`.
 
 **Checagem de isolamento** (o sandbox só enxerga o MCP):
 
@@ -41,7 +60,7 @@ O agente usa o Claude Code reutilizando seu login (ADR-0007, sem API key). O
 login persiste no volume `claude-home` (`~/.claude`, **não** versionado).
 
 ```bash
-docker exec -it khal-sandbox claude login
+make sandbox-login        # = docker exec -it khal-sandbox claude login
 ```
 
 Siga o fluxo OAuth (abra a URL, cole o código). Confirme:
@@ -55,10 +74,12 @@ docker exec khal-sandbox sh -c 'ls -la /home/node/.claude/'   # credenciais pers
 
 ---
 
-## 3. Wiring do agente CX + MCP (determinístico)
+## 3. Wiring do agente CX + MCP (determinístico — embutido no `make sandbox-serve`)
 
 Monta `agents/luz-do-vale/AGENTS.md` (frontmatter de tool-scoping + persona da
-entrega bind-mounted) e registra o MCP no Claude Code:
+entrega bind-mounted + bloco KB/CAG) e registra o MCP no Claude Code. **O `sandbox-up.sh`
+(Etapa 4) já roda o `genie-wire.sh`**, então normalmente você não precisa rodá-lo à mão —
+está aqui para inspeção/debug isolado:
 
 ```bash
 docker exec khal-sandbox bash /srv/genie-wire.sh
@@ -71,24 +92,42 @@ docker exec khal-sandbox claude mcp get luz-do-vale
 ## 4. Subir os daemons + genie serve (determinístico)
 
 ```bash
-docker exec -d khal-sandbox sh -c 'bash /srv/sandbox-up.sh > /tmp/up.log 2>&1'
-# aguarde a convergência:
-docker exec khal-sandbox sh -c '
-  for i in $(seq 1 90); do grep -q "genie serve is running" /tmp/up.log && break; sleep 1; done
-  grep -iE "Omni bridge|Agent sync|Listening on omni|serve is running" /tmp/up.log'
+make sandbox-serve
 ```
 
-Espere: postgres-genie `:19642`, NATS `:4222`, Omni API `:8882`,
-`Agent sync: ... registered` (inclui `luz-do-vale`), `Omni bridge started`,
-`Listening on omni.message.>`, `genie serve is running`.
+Encadeia (via `/srv/sandbox-up.sh`, detached em `/tmp/up.log`): postgres-genie `:19642`,
+NATS/JetStream `:4222`, Omni API `:8882`, **wiring do agente** (Etapa 3), **re-mark de
+onboarding do Claude** (passo 5b, sobrevive a recreate) e `genie serve`. Espera o
+`genie serve is running` e **falha (exit 1)** se não convergir em 120s. Espere ainda:
+`Agent sync: … registered` (inclui `luz-do-vale`), `Listening on omni.message.>`.
+
+> Roda **uma vez** sobre um sandbox recém-subido (`make sandbox-up`). Os daemons abrem portas
+> fixas; não re-execute no mesmo container sem antes recriá-lo (`make sandbox-up`).
+
+Equivalente manual:
+
+```bash
+docker exec -d khal-sandbox sh -c 'bash /srv/sandbox-up.sh > /tmp/up.log 2>&1'
+docker exec khal-sandbox sh -c 'for i in $(seq 1 120); do grep -q "genie serve is running" /tmp/up.log && break; sleep 1; done; tail -5 /tmp/up.log'
+```
 
 ---
 
 ## 5. E2E interno — NATS → bridge → agente → MCP (determinístico, sem WhatsApp)
 
-Publica uma mensagem como se viesse do WhatsApp e observa o agente processando.
-O telefone do remetente (`sender`) é a identidade do cliente — use uma persona do
-seed (ex. Ana Souza). Subject: `omni.message.<instância>.<chat>`. O payload é o
+```bash
+make sandbox-smoke
+```
+
+Self-test reproduzível: resolve uma persona do **seed** (telefone E.164 do titular),
+publica uma `omni.message` sintética de aquecimento + a real, e **afirma** a malha
+`NATS → bridge → spawn → tool-calls no MCP` — `SMOKE OK` com exit 0, ou `SMOKE FAIL`
+com exit ≠ 0 (não passa por engano). Tunável: `SMOKE_WARMUP`/`SMOKE_WAIT` (segundos).
+A *entrega* real (`omni say` → WhatsApp) **não** é exigida aqui — é a Etapa 6.
+
+Para inspecionar/customizar à mão (o `make sandbox-smoke` faz isto por você): publica uma
+mensagem como se viesse do WhatsApp. O telefone do remetente (`sender`) é a identidade do
+cliente — use uma persona do seed. Subject: `omni.message.<instância>.<chat>`. Payload = o
 `OmniMessage` real do Genie: `{ content, sender, instanceId, chatId, agent }`.
 
 > **Importante:** a *entrega* da resposta sai por `omni say` → Omni API → Baileys →
@@ -157,12 +196,12 @@ sandbox a uma rede **não-interna** (mantém backend/database inalcançáveis = 
 abre mão do allowlist de egress p/ o processo omni/Baileys):
 
 ```bash
-docker network create khal-wanet 2>/dev/null || true
-docker network connect khal-wanet khal-sandbox
-# valida: WSS direto OK, negócio ainda bloqueado:
-docker exec khal-sandbox sh -c 'curl -s -o /dev/null -w "wa %{http_code}\n" --noproxy "*" https://web.whatsapp.com; \
-  curl -s -o /dev/null -w "backend %{http_code} (espera 000)\n" --noproxy "*" --max-time 4 http://backend:8000/health'
+make sandbox-wanet     # cria khal-wanet + conecta o sandbox + valida (WSS OK; backend/db 000)
 ```
+
+Equivalente manual: `docker network create khal-wanet` + `docker network connect khal-wanet
+khal-sandbox` + os `curl --noproxy "*"` de validação (web.whatsapp.com alcança; backend/database
+seguem `000` = bloqueados).
 
 ### 6.1 Autentica o CLI do omni
 
@@ -261,9 +300,15 @@ best-effort da SPEC-017) — o isolamento de rede do default (ADR-0006) fica int
 completa pela `bridge` (ver ADR-0010).
 
 ### Notas operacionais
-- **Auth do agente:** se o container foi **recriado** depois do `claude login`, refaça
-  `docker exec -it khal-sandbox claude login` (a sessão TUI do Claude Code atrela ao
-  container; o `claude -p` segue funcionando, mas o spawn TUI cai no OAuth).
+- **Auth do agente (recriação):** o token do `claude login` persiste no volume `claude-home`
+  (`~/.claude/.credentials.json`) e o `sandbox-up.sh` **re-marca o onboarding automaticamente**
+  no startup (passo 5b) — então após um `--force-recreate` o spawn TUI do agente volta a
+  funcionar **sem refazer login**. Só refaça `docker exec -it khal-sandbox claude login` se a
+  credencial em si expirou/sumiu (volume novo). Causa: a credencial fica no volume, mas o estado
+  de onboarding vive em `~/.claude.json` (arquivo irmão, **fora** do volume, resetado no recreate)
+  — daí o re-mark em runtime. Se mesmo assim o pane cair em "Select login method", limpe a sessão
+  obsoleta do chat (`delete from genie_bridge_sessions where chat_id=...` no PG do genie :19642) e
+  reinicie o `genie serve` — o spawn seguinte nasce limpo.
 - **Corrida do 1º spawn:** a 1ª mensagem de um chat cria a sessão e pode não entrar na
   TUI — reenvie. Se você matou janelas tmux no diagnóstico, limpe os resíduos de sessão:
   `delete from genie_bridge_sessions where chat_id ilike '%<lid>%'` (DB genie, `:19642`).

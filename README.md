@@ -97,8 +97,11 @@ Increments seguintes (WhatsApp via Omni/Genie no sandbox) seguem o rollout do AD
 O **runbook operacional** (`docs/operations/runbook.md`, R-18) e o roteiro reutilizavel para:
 subir o stack de negocio, ligar a sandbox isolada do agente (Omni/Genie), rodar os evals,
 diagnosticar problemas comuns (mcp fora da `mcpnet`, backend sem `khal-wanet`, cold-start,
-midia opt-in) e o caminho de **promocao a cloud** (decisao-de-nao-fazer, ADR-0016). O passo a
-passo **interativo** de login/QR/E2E WhatsApp fica em `sandbox/RUNBOOK.md`.
+midia opt-in) e o caminho de **promocao a cloud** (decisao-de-nao-fazer, ADR-0016). A parte
+**deterministica** de subir a sandbox (build das 2 imagens + overlay isolado) e `make sandbox-up`
+(derrubar so o overlay: `make sandbox-down`); fica **fora** do `make compose-up` padrao porque o
+runtime do agente e zona nao-confiavel (docs/07, ADR-0006). O passo a passo **interativo** de
+login/QR/E2E WhatsApp fica em `sandbox/RUNBOOK.md`.
 
 Adaptacoes de demo conhecidas (detalhe no runbook §6/§7):
 - **Recriar o `mcp-server` sempre com os dois `-f`** (`docker-compose.yml` +

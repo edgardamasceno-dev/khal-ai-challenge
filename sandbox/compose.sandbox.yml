@@ -48,6 +48,11 @@ services:
       NO_PROXY: mcp-server,localhost,127.0.0.1,mmg.whatsapp.net,.cdn.whatsapp.net,.fna.whatsapp.net
       # MCP interno (mcpnet) consumido pelo agente CX via Claude Code.
       MCP_URL: http://mcp-server:8000/mcp
+      # CAG (R-08): a kb/ da entrega (montada em /srv/agent-kb, volume abaixo) e
+      # pre-carregada pelo genie-wire.sh no prefixo estavel do prompt — mesma ordem/
+      # formato de src/agent/prompt.py, garantindo paridade eval<->producao (M-07).
+      # Sem este mount o bloco CAG some e o agente cai no search_knowledge_base.
+      WIRE_KB: /srv/agent-kb
       # R-05 (cold-start estrutural): pgdata do Genie num caminho dedicado, montado
       # em VOLUME NOMEADO (abaixo), p/ sobreviver a `--force-recreate`. Fica FORA de
       # ~/.genie p/ não cobrir o config.json (setupComplete) gravado no build.
@@ -56,6 +61,9 @@ services:
     volumes:
       # Persona da entrega (fonte única do AGENTS.md do agente CX), só leitura.
       - ./agent:/srv/agent-src:ro
+      # CAG (R-08/M-07): a kb/ da entrega pré-carregada no prompt do agente (ver WIRE_KB),
+      # em path dedicado (sem nested-mount sobre o agent-src ro), só leitura.
+      - ./kb:/srv/agent-kb:ro
       # R-20: hooks de guardrail determinístico + settings do Claude Code (escopo
       # user), só leitura. O genie-wire.sh copia o settings.json p/ ~/.claude.
       # (paths relativos ao docker-compose.yml base, na raiz da entrega).

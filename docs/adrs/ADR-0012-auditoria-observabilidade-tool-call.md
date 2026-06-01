@@ -4,6 +4,12 @@
 - Data: 2026-05-31
 - Entrega: T3 (observabilidade). Relaciona-se com ADR-0001 (stack/hexagonal) e o guardrail de
   acesso-só-ao-titular (SPEC-003/SPEC-004) — auditoria é puramente **observacional**.
+- Revisao: 2026-05-31 (R-10, `docs/11-roadmap-melhorias-agente.md`). Adicionada a secao
+  **"Correlacao ponta-a-ponta (traceId)"** abaixo, fechando a observabilidade ponta-a-ponta
+  citada nas vagas. A coluna `trace_id` de `tool_call_audit` ja existia; a revisao apenas liga
+  o **header de entrada do `/mcp`** ao registro de audit (codigo+teste no cluster MCP) e
+  **documenta** a nota de propagacao do lado bridge/Omni (esta secao). Nenhuma assinatura de
+  tool muda.
 
 ## Context
 
@@ -44,6 +50,30 @@ Materializar a auditoria por tool-call com fronteira **best-effort** e **mascara
 
 Escopo fechado: **não** é enforcement. A auditoria nunca bloqueia/altera tool; os guardrails
 continuam onde estão (determinísticos, no código).
+
+## Correlacao ponta-a-ponta (traceId) — revisao 2026-05-31 (R-10)
+
+A coluna `trace_id` ja existe em `tool_call_audit` e o `AuditRecord`/`instrumentar()` ja a
+aceitam; faltava apenas **capturar o identificador na borda** e liga-lo ao registro. A revisao
+fecha isso **sem** mudar a assinatura de nenhuma `@mcp.tool()` nem do `CxTools`/`LegacyApiClient`:
+
+1. **Captura na borda do `/mcp`** (cluster MCP, codigo+teste). Um `ContextVar[str | None]` +
+   middleware Starlette montado sobre o app HTTP do FastMCP le o header **`x-trace-id`** (fallback
+   secundario `x-request-id` / `traceparent` do W3C) de cada request, seta o `ContextVar` e o
+   reseta no `finally`. Ausente o header, gera-se um `uuid4` curto para sempre haver correlacao.
+2. **Ligacao ao audit.** No momento de cada tool-call, o RECORDER (`AuditedCxTools._wrap`) le o
+   `trace_id` corrente do `ContextVar` e o passa a `instrumentar()`, que ja grava na linha de
+   `tool_call_audit`. Leitura **tardia** (no momento da chamada) garante que cada registro carrega
+   o trace do request corrente.
+
+**Nota de propagacao do lado bridge/Omni (documental, fora do codigo desta entrega).** O payload
+`omni.message` ja carrega um `traceId`. Para fechar a correlacao **WhatsApp → turno → tool-call**,
+o omni-bridge/Genie deve **repassar** esse `traceId` como header `x-trace-id` na chamada ao `/mcp`.
+Se o Genie **nao** repassar, o middleware gera o id no proprio MCP — a correlacao tool-call↔audit
+continua valida, mas a amarracao com o turno de WhatsApp fica como **stretch**, recuperavel por
+`chat_id + created_at`. Exportador OTel completo (tracing distribuido) permanece **fora de escopo**
+(stretch documentado) — esta revisao entrega correlacao por `trace_id` + `tool_call_audit`, nao um
+backend de tracing.
 
 ## Consequences
 

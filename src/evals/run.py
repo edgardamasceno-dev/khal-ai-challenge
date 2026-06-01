@@ -119,6 +119,18 @@ def main(argv: list[str]) -> int:
             fail += 1
             continue
         print(" (esperado)" if sc.expected_model else "")
+        # Setup por-cenario (R-03/J10b): monta a PRECONDICAO de estado ANTES de gastar
+        # o turno do LLM (ex.: semeia `pagamento.confirmado` na memoria via REST). So
+        # alguns cenarios definem. Falha de setup REPROVA o cenario (nao passa por
+        # engano nem derruba a suite) — a precondicao indisponivel e um FAIL legitimo.
+        if sc.setup is not None:
+            try:
+                sc.setup(sc.phone)
+                print("  setup: ok (precondicao semeada)")
+            except Exception as exc:  # noqa: BLE001 — falha de setup vira FAIL do cenario
+                print(f"  FAIL  (setup falhou: {type(exc).__name__}: {exc})")
+                fail += 1
+                continue
         run = run_agent(sc.phone, sc.message, modelo=tier)
         passed, detail = sc.assertion(run)
         print(f"  tools: {run.tool_names()}")

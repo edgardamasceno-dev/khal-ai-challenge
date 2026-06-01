@@ -76,8 +76,19 @@ make compose-up        # database + seed (one-shot) + backend + frontend + mcp-s
   o seed do banco usando o **mesmo `SEED_PERSONAS`/`SEED_RANDOM_SEED`** — as jornadas são derivadas das
   personas, então banco e eval precisam casar (ex.: `SEED_PERSONAS="Ana Souza:...;Carlos Lima:...;Joana Pereira:..." make agent-evals`).
   O **Agent Score** (gate ≥ 85) e o histórico de passadas (criar → simular → iterar → re-simular) ficam em
-  **`docs/evals/agent-score-iteracoes.md`** (Passada 1: 75/100 → Passada 2: 88/100). Ver também
+  **`docs/evals/agent-score-iteracoes.md`** (Passadas 1→2→3→4: **75 → 88 → 96 → 100/100**). Ver também
   `docs/specs/SPEC-004-agent-cx.md` e `docs/operations/runbook.md`.
+
+**Agent Score — ciclo ao vivo (criar → simular → iterar → re-simular):**
+
+| Passada | Score | PASS/FAIL | Dívida fechada na iteração |
+|---|---|---|---|
+| 1 (baseline) | 75 | 18/6 | — (diagnóstico) |
+| 2 | **88** ✅ | 21/3 | prompt (intenção→tool) + roteamento (modelo barato pulava a abertura) |
+| 3 | **96** ✅ | 23/1 | prompt (recusa de acesso cruzado) + test-design (erro determinístico de domínio) |
+| 4 | **100** 🏁 | 24/0 | test-design (precondição de memória) + assertion ancorada em tool-call |
+
+Cada delta é rastreável a uma dívida nomeada, **sem mudança em código de negócio** (só `agent/AGENTS.md`, `src/agent/model_router.py` e o harness de eval). Detalhe passada a passada em `docs/evals/agent-score-iteracoes.md`.
 
 Increments seguintes (WhatsApp via Omni/Genie no sandbox) seguem o rollout do ADR-0006.
 

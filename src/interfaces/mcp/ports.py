@@ -24,3 +24,6 @@ class LegacyApiClient(Protocol):
     def get_conversation_memory(
         self, chat: str, limit: int = 10
     ) -> list[dict[str, Any]]: ...
+    def get_chat_messages(
+        self, phone: str, limit: int = 10
+    ) -> list[dict[str, Any]]: ...

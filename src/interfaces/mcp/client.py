@@ -89,3 +89,18 @@ class HttpxLegacyApiClient:
         r.raise_for_status()
         data: list[dict[str, Any]] = r.json()
         return data
+
+    def get_chat_messages(self, phone: str, limit: int = 10) -> list[dict[str, Any]]:
+        """Transcricao crua do chat do titular no WhatsApp/Omni (ADR-0013, SPEC-024).
+
+        Reusa o transcript do operador (SPEC-018) via GET /chats/{phone}/messages,
+        espelhando o consumo de `get_conversation_memory`. `phone` e o telefone canonico
+        do titular (path param); o adapter Omni resolve o chatId pelas variantes do nono
+        digito/LID (SPEC-015), nunca por chat citado pelo cliente. Devolve apenas a lista
+        de mensagens [{id, texto, do_cliente, em}] (ordem das mais recentes), descartando
+        o cursor/tem_mais de paginacao do operador. Best-effort: Omni off -> lista vazia."""
+        r = self._c.get(f"/chats/{phone}/messages", params={"limit": limit})
+        r.raise_for_status()
+        body: dict[str, Any] = r.json()
+        mensagens: list[dict[str, Any]] = body.get("mensagens", [])
+        return mensagens

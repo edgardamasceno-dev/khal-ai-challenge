@@ -19,6 +19,16 @@ O `server.py` continua registrando as tools com `@mcp.tool()` explícitos (as
 docstrings/assinaturas tipadas que o FastMCP expõe ao agente moram lá); esta
 lista NÃO substitui o registro — ela é a verdade *contratual* contra a qual o
 registro do server, o frontmatter e os evals são verificados.
+
+Fronteira de memória do agente (ADR-0013): duas tools de leitura, distintas e
+read-only, ambas resolvendo o titular pelo telefone do remetente:
+- ``get_account_events`` (ex-``get_conversation_context``) — FATOS DETERMINÍSTICOS
+  DE SISTEMA da conta (eventos tipados gravados em ``conversation_memory`` pelo
+  ProactiveService/worker, ADR-0005): pagamento confirmado, interrupção
+  aberta/encerrada, último protocolo. NÃO é a transcrição da conversa.
+- ``get_chat_history`` — TRANSCRIÇÃO conversacional crua (o que foi DITO no
+  WhatsApp/Omni), reusando o transcript do operador (SPEC-018). Recuperação
+  pós-cold-start, quando a sessão Genie reseta a janela curta/volátil.
 """
 
 from __future__ import annotations
@@ -44,7 +54,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "get_ticket_status",
     "request_human_handoff",
     "search_knowledge_base",
-    "get_conversation_context",
+    "get_account_events",
+    "get_chat_history",
 )
 
 

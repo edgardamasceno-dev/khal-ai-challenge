@@ -130,27 +130,29 @@ def assert_pdf(run: AgentRun) -> tuple[bool, str]:
     return ok, f"tools={run.tool_names()} pdf={enviou_pdf} ticket={run.wrote_ticket()}"
 
 
-def assert_context(run: AgentRun) -> tuple[bool, str]:
-    """R-03: na abertura, o agente le a memoria canonica do titular.
+def assert_eventos_conta(run: AgentRun) -> tuple[bool, str]:
+    """R-03 (ADR-0013): na abertura, o agente le os EVENTOS DE SISTEMA da conta.
 
-    Prova por tool-call que `get_conversation_context` e chamada no opening
-    (junto de `find_customer_by_phone`), sem abrir chamado por engano.
+    Prova por tool-call que `get_account_events` e chamada no opening (junto de
+    `find_customer_by_phone`) para ler os fatos deterministicos ja registrados
+    (pagamento confirmado, interrupcao aberta/encerrada, ultimo protocolo) — NAO
+    e a transcricao da conversa. Nao abre chamado por engano.
     """
     resolveu = run.called("find_customer_by_phone")
-    leu_memoria = run.called("get_conversation_context")
+    leu_eventos = run.called("get_account_events")
     nao_ticket = not run.wrote_ticket()
-    ok = resolveu and leu_memoria and nao_ticket
-    return ok, f"tools={run.tool_names()} memoria={leu_memoria} ticket={run.wrote_ticket()}"
+    ok = resolveu and leu_eventos and nao_ticket
+    return ok, f"tools={run.tool_names()} eventos={leu_eventos} ticket={run.wrote_ticket()}"
 
 
 def assert_nao_reabre(run: AgentRun) -> tuple[bool, str]:
-    """R-03 (variante forte): com `pagamento.confirmado` na memoria, o agente
-    reconhece a fatura quitada e NAO reabre chamado / NAO oferece 2a via dela.
+    """R-03 (variante forte): com `pagamento.confirmado` nos eventos de sistema, o
+    agente reconhece a fatura quitada e NAO reabre chamado / NAO oferece 2a via dela.
 
     Depende de seed de memoria no DB de eval (fixture) — marcar como cenario do
     stack com memoria semeada. Robusto por tool-call (nao escreve) + reconhecimento.
     """
-    consultou = run.called("get_conversation_context") or run.called("get_invoice_status")
+    consultou = run.called("get_account_events") or run.called("get_invoice_status")
     nao_ticket = not run.wrote_ticket()
     reconheceu = has_kw(
         run.result, "paga", "pago", "quitad", "confirmad", "ja foi", "já foi",
@@ -158,6 +160,21 @@ def assert_nao_reabre(run: AgentRun) -> tuple[bool, str]:
     )
     ok = consultou and nao_ticket and reconheceu
     return ok, f"tools={run.tool_names()} ticket={run.wrote_ticket()} reconheceu={reconheceu}"
+
+
+def assert_transcript(run: AgentRun) -> tuple[bool, str]:
+    """R-03 (ADR-0013): recuperacao CONVERSACIONAL — quando o cliente referencia
+    algo "dito antes", o agente le a transcricao crua via `get_chat_history`.
+
+    Prova por tool-call que `get_chat_history` e chamada para retomar o fio do que
+    ja foi conversado (texto cru, distinto dos eventos de sistema), sem reescrever
+    chamado nem inventar. Best-effort: se vier vazio (Omni off), NAO afirma ausencia.
+    Depende de seed de transcricao no stack com Omni.
+    """
+    leu_historico = run.called("get_chat_history")
+    nao_ticket = not run.wrote_ticket()
+    ok = leu_historico and nao_ticket
+    return ok, f"tools={run.tool_names()} historico={leu_historico} ticket={run.wrote_ticket()}"
 
 
 def make_welcome(nome: str) -> Assertion:
@@ -329,16 +346,17 @@ def build_scenarios(
             "Como faco para transferir a titularidade da conta para outra pessoa?",
             assert_kb,
         ),
-        # J10 (R-03): abertura usa a tool de memoria. Roda SEM seed de memoria —
-        # so verifica o tool-call de abertura (find_customer + get_conversation_context).
+        # J10 (R-03 / ADR-0013): abertura le os EVENTOS DE SISTEMA da conta. Roda SEM
+        # seed de memoria — so verifica o tool-call de abertura (find_customer +
+        # get_account_events).
         Scenario(
-            "J10-contexto-memoria", p, "Oi, e sobre aquilo de ontem.", assert_context,
+            "J10-eventos-conta", p, "Oi, e sobre aquilo de ontem.", assert_eventos_conta,
         ),
-        # J10b (R-03, variante forte): com `pagamento.confirmado` na memoria, NAO
+        # J10b (R-03, variante forte): com `pagamento.confirmado` nos eventos, NAO
         # reabre chamado/2a via e reconhece o pagamento. DEPENDE de seed de memoria
         # no DB de eval (fixture) — cenario do stack com memoria semeada.
         Scenario(
-            "J10b-nao-reabre", p,
+            "J10b-eventos-nao-reabre", p,
             "Minha fatura ainda esta em aberto? quero pagar.", assert_nao_reabre,
         ),
         # J13 (M-02): tool retorna ERRO tecnico -> recuperacao empatica, sem vazar
@@ -346,6 +364,15 @@ def build_scenarios(
         Scenario(
             "J13-tool-erro", p, "Quero ver o status da minha fatura, por favor.",
             assert_tool_error,
+        ),
+        # J14 (R-03 / ADR-0013): recuperacao CONVERSACIONAL — o cliente referencia
+        # algo "dito antes", entao o agente le a transcricao via `get_chat_history`
+        # (texto cru, distinto dos eventos de sistema). DEPENDE de seed de transcricao
+        # no stack com Omni (best-effort: sem Omni -> mensagens vazias).
+        Scenario(
+            "J14-transcricao-historico", p,
+            "Continuando o que eu te falei mais cedo, pode seguir com aquilo?",
+            assert_transcript,
         ),
     ]
     return cenarios

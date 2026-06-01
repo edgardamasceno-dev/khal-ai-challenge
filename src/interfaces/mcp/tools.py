@@ -15,9 +15,13 @@ from typing import Any
 from src.domain.shared.phone import normalizar_msisdn, variantes_nono_digito
 from src.interfaces.mcp.ports import LegacyApiClient, LegacyValidationError
 
-# Quantidade default de itens de memoria devolvidos ao agente (mais recentes).
+# Quantidade default de eventos de sistema devolvidos ao agente (mais recentes).
 # Nao e input do agente: a tool decide o teto (R-03 / SPEC-022).
 _MEMORIA_LIMITE = 10
+
+# Quantidade default de mensagens da transcricao devolvidas ao agente (mais recentes).
+# Nao e input do agente: a tool decide o teto (SPEC-024 / ADR-0013).
+_TRANSCRICAO_LIMITE = 10
 
 
 class CxTools:
@@ -196,17 +200,21 @@ class CxTools:
             ],
         }
 
-    def get_conversation_context(self, phone: str) -> dict[str, Any]:
-        """Le a memoria canonica recente do titular (read-only). Fecha o loop
-        proativo<->reativo do ADR-0005: fatos gravados deterministicamente pelo
-        ProactiveService/worker (pagamento confirmado, interrupcao aberta/encerrada,
-        ultimo protocolo) ficam legiveis ao agente no abrir da conversa (R-03).
+    def get_account_events(self, phone: str) -> dict[str, Any]:
+        """Le os FATOS DETERMINISTICOS DE SISTEMA da conta do titular (read-only).
+
+        Sao eventos tipados gravados pelo ProactiveService/worker em conversation_memory
+        (ADR-0005): pagamento confirmado, interrupcao aberta/encerrada, ultimo protocolo.
+        NAO e a transcricao da conversa (texto cru) — para isso use get_chat_history.
+        Fecha o loop proativo<->reativo (ADR-0013): o que o sistema ja resolveu/notificou
+        fica legivel ao agente no abrir da conversa, para nao reoferecer 2a via de fatura
+        ja paga nem reabrir chamado encerrado (R-03).
 
         Guardrail deterministico, identico as demais tools:
         (1) resolve o titular SEMPRE pelo `phone` do remetente (contexto confiavel do
             canal), nunca por id/telefone citado pelo cliente;
-        (2) se nao resolve titular -> {"encontrado": False} e NAO consulta memoria;
-        (3) le APENAS a memoria do chat do proprio titular. A memoria e chaveada por
+        (2) se nao resolve titular -> {"encontrado": False} e NAO consulta a memoria;
+        (3) le APENAS os eventos do chat do proprio titular. A memoria e chaveada por
             chat_id == telefone E.164 (ADR-0005); a tool usa o telefone canonico
             NORMALIZADO (variantes do nono digito), nunca o telefone cru recebido.
 
@@ -215,7 +223,7 @@ class CxTools:
         titular = self._api.find_customer(phone)
         if titular is None:
             return {"encontrado": False, "motivo": "Telefone nao identificado."}
-        itens = self._ler_memoria_do_titular(phone)
+        itens = self._ler_eventos_do_titular(phone)
         recentes = sorted(
             itens, key=lambda m: str(m.get("atualizado_em") or ""), reverse=True
         )[:_MEMORIA_LIMITE]
@@ -233,13 +241,50 @@ class CxTools:
             "total": len(recentes),
         }
 
-    def _ler_memoria_do_titular(self, phone: str) -> list[dict[str, Any]]:
-        """Le a memoria do chat do titular pelas variantes canonicas do telefone
-        (com/sem nono digito, SPEC-015), NUNCA pelo telefone cru. Para na primeira
-        variante com memoria. Sem memoria -> lista vazia (best-effort, nao quebra)."""
+    def _ler_eventos_do_titular(self, phone: str) -> list[dict[str, Any]]:
+        """Le os eventos de sistema do chat do titular pelas variantes canonicas do
+        telefone (com/sem nono digito, SPEC-015), NUNCA pelo telefone cru. Para na
+        primeira variante com eventos. Sem eventos -> lista vazia (best-effort)."""
         canonico = normalizar_msisdn(phone)
         for variante in variantes_nono_digito(canonico):
             itens = self._api.get_conversation_memory(variante, _MEMORIA_LIMITE)
             if itens:
                 return itens
         return []
+
+    def get_chat_history(self, phone: str) -> dict[str, Any]:
+        """Le a TRANSCRICAO crua das ultimas N mensagens da conversa do titular no
+        WhatsApp/Omni (texto do que foi DITO por cliente e agente/operador) — read-only.
+
+        Recuperacao CONVERSACIONAL: complementa get_account_events (fatos de sistema)
+        cobrindo 'o que ja foi conversado', util pos cold-start ou quando a sessao Genie
+        reseta (janela curta/volatil) e o agente precisa retomar o fio sem repetir
+        perguntas (ADR-0013 / SPEC-024). NAO sao fatos de sistema — sao mensagens.
+
+        Guardrail deterministico, identico as demais tools:
+        (1) resolve o titular/chat SEMPRE pelo `phone` do remetente (contexto confiavel
+            do canal), nunca por chat citado pelo cliente;
+        (2) se nao resolve titular -> {"encontrado": False} e NAO le a transcricao;
+        (3) le APENAS o chat do proprio titular: o telefone canonico vai como path param
+            e o adapter Omni casa o chatId pelas variantes do nono digito/LID (SPEC-015).
+
+        Best-effort: Omni off/indisponivel -> mensagens=[] (nao quebra, nao afirma
+        ausencia). Somente-leitura: NAO escreve, NAO muta estado.
+        """
+        titular = self._api.find_customer(phone)
+        if titular is None:
+            return {"encontrado": False, "motivo": "Telefone nao identificado."}
+        mensagens = self._api.get_chat_messages(normalizar_msisdn(phone), _TRANSCRICAO_LIMITE)
+        return {
+            "encontrado": True,
+            "titular": titular["nome"],
+            "mensagens": [
+                {
+                    "texto": m["texto"],
+                    "do_cliente": m["do_cliente"],
+                    "em": m["em"],
+                }
+                for m in mensagens[:_TRANSCRICAO_LIMITE]
+            ],
+            "total": min(len(mensagens), _TRANSCRICAO_LIMITE),
+        }

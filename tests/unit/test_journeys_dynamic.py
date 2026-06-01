@@ -41,8 +41,9 @@ def test_cobre_jornadas_comportamentais_fixas() -> None:
     fixos = (
         "J3a-pede-confirmacao", "J3b-confirmado", "J6a-injection",
         "J7-handoff", "J8-base-conhecimento",
-        # Novos casos comportamentais fixos na persona primaria (R-03 / M-02).
-        "J10-contexto-memoria", "J10b-nao-reabre", "J13-tool-erro",
+        # Casos comportamentais fixos na persona primaria (R-03 / M-02 / ADR-0013).
+        "J10-eventos-conta", "J10b-eventos-nao-reabre", "J13-tool-erro",
+        "J14-transcricao-historico",
     )
     for fixo in fixos:
         assert fixo in nomes

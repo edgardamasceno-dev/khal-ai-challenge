@@ -125,15 +125,28 @@ def search_knowledge_base(query: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_conversation_context(phone: str) -> dict[str, Any]:
-    """Le o historico canonico recente do titular (read-only) pelo telefone.
+def get_account_events(phone: str) -> dict[str, Any]:
+    """Le os FATOS DE SISTEMA da conta do titular (read-only) pelo telefone.
 
-    Devolve fatos ja registrados deterministicamente (ADR-0005): pagamento
-    confirmado, interrupcao aberta/encerrada, ultimo protocolo. Chame no PRIMEIRO
-    turno (junto de find_customer_by_phone) para NAO repetir o que ja foi resolvido.
+    Devolve eventos deterministicos ja registrados (ADR-0005): pagamento confirmado,
+    interrupcao aberta/encerrada, ultimo protocolo. NAO e a transcricao da conversa
+    (para isso use get_chat_history). Chame no PRIMEIRO turno (junto de
+    find_customer_by_phone) para NAO reoferecer o que o sistema ja resolveu.
     Nao escreve nem muta estado.
     """
-    return _tools.get_conversation_context(phone)
+    return _tools.get_account_events(phone)
+
+
+@mcp.tool()
+def get_chat_history(phone: str) -> dict[str, Any]:
+    """Le a TRANSCRICAO da conversa do titular no WhatsApp/Omni (read-only) pelo telefone.
+
+    Devolve as ultimas mensagens trocadas (o que foi DITO por cliente e agente/operador),
+    para retomar o fio quando a sessao perdeu o contexto (pos cold-start/reset) — NAO sao
+    fatos de sistema (para isso use get_account_events). Best-effort: Omni indisponivel ou
+    conversa nova -> mensagens vazias; nao afirme ausencia. Nao escreve nem muta estado.
+    """
+    return _tools.get_chat_history(phone)
 
 
 if __name__ == "__main__":

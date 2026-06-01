@@ -174,7 +174,7 @@ def _nomear_args(
 
 
 class AuditedCxTools:
-    """Decorator de `CxTools` que instrumenta os 10 metodos-tool (T3) sem mudar
+    """Decorator de `CxTools` que instrumenta os 11 metodos-tool (T3) sem mudar
     assinatura nem retorno. Cada chamada gera UM `AuditRecord` (log + sink
     best-effort). Guardrails e contratos das tools permanecem intactos.
 
@@ -224,5 +224,8 @@ class AuditedCxTools:
     def search_knowledge_base(self, query: str) -> dict[str, Any]:
         return self._wrap(self._tools.search_knowledge_base, "search_knowledge_base")(query)
 
-    def get_conversation_context(self, phone: str) -> dict[str, Any]:
-        return self._wrap(self._tools.get_conversation_context, "get_conversation_context")(phone)
+    def get_account_events(self, phone: str) -> dict[str, Any]:
+        return self._wrap(self._tools.get_account_events, "get_account_events")(phone)
+
+    def get_chat_history(self, phone: str) -> dict[str, Any]:
+        return self._wrap(self._tools.get_chat_history, "get_chat_history")(phone)

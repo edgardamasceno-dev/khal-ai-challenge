@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from src.interfaces.mcp.tools import CxTools
 from tests.unit.mcp_fakes import FakeLegacyApiClient
 
@@ -10,6 +12,15 @@ DESCONHECIDO = "550000000000"
 
 def _tools() -> CxTools:
     return CxTools(FakeLegacyApiClient())
+
+
+class _FakeApiSemOmni(FakeLegacyApiClient):
+    """Variante do fake com o Omni indisponivel: a transcricao sempre vem vazia
+    (best-effort) — o adapter Omni real engole a falha e devolve []. O resto da
+    API legada continua respondendo (titular resolve normalmente)."""
+
+    def get_chat_messages(self, phone: str, limit: int = 10) -> list[dict[str, Any]]:
+        return []
 
 
 class TestFindCustomer:
@@ -130,36 +141,75 @@ class TestGenerateInvoicePdf:
         assert r["gerado"] is False
 
 
-class TestConversationContext:
-    """get_conversation_context (R-03 / SPEC-022): memoria read-only do titular."""
+class TestAccountEvents:
+    """get_account_events (ex get_conversation_context, R-03 / SPEC-022):
+    eventos deterministicos de sistema da conta, read-only, do proprio titular."""
 
-    def test_retorna_contexto_do_titular(self) -> None:
-        r = _tools().get_conversation_context(ANA)
+    def test_retorna_eventos_do_titular(self) -> None:
+        r = _tools().get_account_events(ANA)
         assert r["encontrado"] is True and r["titular"] == "Ana Souza"
         chaves = {item["chave"] for item in r["itens"]}
         assert "proativo.pagamento.confirmado" in chaves
         assert r["total"] == len(r["itens"]) >= 1
 
     def test_itens_do_mais_recente_para_o_mais_antigo(self) -> None:
-        # A memoria mais recente (atualizado_em maior) vem primeiro.
-        itens = _tools().get_conversation_context(ANA)["itens"]
+        # O evento mais recente (atualizado_em maior) vem primeiro.
+        itens = _tools().get_account_events(ANA)["itens"]
         ts = [item["atualizado_em"] for item in itens]
         assert ts == sorted(ts, reverse=True)
         assert itens[0]["chave"] == "proativo.pagamento.confirmado"
 
     def test_telefone_desconhecido_nao_consulta_memoria(self) -> None:
-        # Guardrail: telefone sem titular -> encontrado=False e nao expoe memoria.
-        r = _tools().get_conversation_context(DESCONHECIDO)
+        # Guardrail: telefone sem titular -> encontrado=False e nao expoe eventos.
+        r = _tools().get_account_events(DESCONHECIDO)
         assert r["encontrado"] is False
         assert "itens" not in r
 
-    def test_nao_vaza_memoria_de_outro_titular(self) -> None:
-        # Carlos (titular valido, sem memoria) nao recebe a memoria da Ana.
-        r = _tools().get_conversation_context(CARLOS)
+    def test_nao_vaza_eventos_de_outro_titular(self) -> None:
+        # Carlos (titular valido, sem eventos) nao recebe os eventos da Ana.
+        r = _tools().get_account_events(CARLOS)
         assert r["encontrado"] is True and r["titular"] == "Carlos Lima"
         assert r["itens"] == [] and r["total"] == 0
 
-    def test_best_effort_sem_memoria(self) -> None:
-        # Titular sem nenhuma memoria gravada -> itens vazios, sem quebrar.
-        r = _tools().get_conversation_context(CARLOS)
+    def test_best_effort_sem_eventos(self) -> None:
+        # Titular sem nenhum evento gravado -> itens vazios, sem quebrar.
+        r = _tools().get_account_events(CARLOS)
         assert r["encontrado"] is True and r["itens"] == []
+
+
+class TestChatHistory:
+    """get_chat_history (SPEC-024 / ADR-0013): transcricao conversacional read-only
+    do chat do proprio titular (reuso do transcript do operador, SPEC-018)."""
+
+    def test_retorna_transcricao_do_titular(self) -> None:
+        r = _tools().get_chat_history(ANA)
+        assert r["encontrado"] is True and r["titular"] == "Ana Souza"
+        textos = [m["texto"] for m in r["mensagens"]]
+        assert any("segunda via" in t for t in textos)
+        assert r["total"] == len(r["mensagens"]) >= 1
+
+    def test_mensagens_marcam_origem_cliente_vs_agente(self) -> None:
+        # do_cliente=True = recebida do cliente; False = enviada pelo agente/operador.
+        mensagens = _tools().get_chat_history(ANA)["mensagens"]
+        assert any(m["do_cliente"] is True for m in mensagens)
+        assert any(m["do_cliente"] is False for m in mensagens)
+
+    def test_telefone_desconhecido_nao_le_transcricao(self) -> None:
+        # Guardrail: telefone sem titular -> encontrado=False e nao expoe transcricao.
+        r = _tools().get_chat_history(DESCONHECIDO)
+        assert r["encontrado"] is False
+        assert "mensagens" not in r
+
+    def test_nao_vaza_transcricao_de_outro_titular(self) -> None:
+        # Carlos (titular valido, conversa nova) nao recebe a transcricao da Ana.
+        r = _tools().get_chat_history(CARLOS)
+        assert r["encontrado"] is True and r["titular"] == "Carlos Lima"
+        assert r["mensagens"] == [] and r["total"] == 0
+
+    def test_best_effort_omni_indisponivel(self) -> None:
+        # Omni off/indisponivel (get_chat_messages -> []) -> mensagens vazias, sem quebrar
+        # e sem afirmar ausencia (encontrado segue True para o titular resolvido).
+        tools = CxTools(_FakeApiSemOmni())
+        r = tools.get_chat_history(ANA)
+        assert r["encontrado"] is True and r["titular"] == "Ana Souza"
+        assert r["mensagens"] == [] and r["total"] == 0

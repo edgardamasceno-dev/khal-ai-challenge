@@ -100,26 +100,29 @@ def test_parity_frontmatter_equals_allowlist() -> None:
 
 
 def test_pdf_and_memory_tools_present_in_all_sources() -> None:
-    """BÔNUS — regressão explícita dos bugs R-02 (PDF) e R-03 (memória):
-    ``generate_invoice_pdf`` e ``get_conversation_context`` aparecem nas TRÊS
-    fontes (server, evals, frontmatter), via a fonte única."""
+    """BÔNUS — regressão explícita dos bugs R-02 (PDF) e R-03 (memória) e da
+    fronteira de memória do ADR-0013: ``generate_invoice_pdf``,
+    ``get_account_events`` (ex-``get_conversation_context``, EVENTOS de sistema)
+    e ``get_chat_history`` (TRANSCRIÇÃO conversacional) aparecem nas TRÊS fontes
+    (server, evals, frontmatter), via a fonte única."""
     from src.evals.run import TOOLS
 
     fm = yaml.safe_load(FRONTMATTER_PATH.read_text(encoding="utf-8"))
     fm_allow = set(fm["permissions"]["allow"])
     server_names = _server_registered_names()
 
-    for tool in ("generate_invoice_pdf", "get_conversation_context"):
+    for tool in ("generate_invoice_pdf", "get_account_events", "get_chat_history"):
         assert tool in allowlist.TOOL_NAMES, f"{tool} ausente da allowlist"
         assert tool in TOOLS, f"{tool} ausente do tool-scope dos evals"
         assert tool in server_names, f"{tool} não registrada no server.py"
         assert f"mcp__luz-do-vale__{tool}" in fm_allow, f"{tool} ausente do frontmatter"
 
 
-def test_allowlist_has_exactly_ten_tools() -> None:
-    """O contrato R-02 fecha em 10 tools (catálogo completo, PDF + memória
-    incluídos). Trava o tamanho para flagrar adição/remoção silenciosa."""
-    assert len(allowlist.TOOL_NAMES) == 10, (
-        f"esperadas 10 tools no catálogo, encontradas {len(allowlist.TOOL_NAMES)}: "
+def test_allowlist_has_exactly_eleven_tools() -> None:
+    """O contrato R-02 fecha em 11 tools (catálogo completo: PDF + as duas tools
+    de memória do ADR-0013, ``get_account_events`` e ``get_chat_history``).
+    Trava o tamanho para flagrar adição/remoção silenciosa."""
+    assert len(allowlist.TOOL_NAMES) == 11, (
+        f"esperadas 11 tools no catálogo, encontradas {len(allowlist.TOOL_NAMES)}: "
         f"{list(allowlist.TOOL_NAMES)}"
     )

@@ -121,6 +121,26 @@ _MEMORY: dict[str, list[dict[str, Any]]] = {
 }
 
 
+# telefone canonico -> transcricao crua do chat (SPEC-018/SPEC-024), das mais recentes.
+# Ana tem conversa; Carlos nao (conversa nova -> transcricao vazia, best-effort).
+_TRANSCRIPTS: dict[str, list[dict[str, Any]]] = {
+    "555199990001": [
+        {
+            "id": "M-2",
+            "texto": "Perfeito, pode seguir com a segunda via entao.",
+            "do_cliente": True,
+            "em": "2026-05-30T12:05:00Z",
+        },
+        {
+            "id": "M-1",
+            "texto": "Oi! Vi que sua fatura de maio esta em aberto. Posso ajudar?",
+            "do_cliente": False,
+            "em": "2026-05-30T12:00:00Z",
+        },
+    ],
+}
+
+
 class FakeLegacyApiClient:
     def __init__(self) -> None:
         self._tickets: dict[str, dict[str, Any]] = {}  # protocolo -> ticket
@@ -202,6 +222,9 @@ class FakeLegacyApiClient:
 
     def get_conversation_memory(self, chat: str, limit: int = 10) -> list[dict[str, Any]]:
         return list(_MEMORY.get(chat, []))[:limit]
+
+    def get_chat_messages(self, phone: str, limit: int = 10) -> list[dict[str, Any]]:
+        return list(_TRANSCRIPTS.get(phone, []))[:limit]
 
     def search_kb(self, query: str) -> list[dict[str, Any]]:
         q = query.lower()

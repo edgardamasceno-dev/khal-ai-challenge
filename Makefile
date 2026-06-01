@@ -76,17 +76,16 @@ sandbox-serve:
 sandbox-smoke:
 	bash sandbox/smoke.sh
 
-# Etapa 6.0 (RUNBOOK): a PARTE DETERMINISTICA do E2E WhatsApp real. Conecta o sandbox a uma
-# rede NAO-interna (khal-wanet) p/ o WSS direto do Baileys (que nao honra HTTP_PROXY). Mantem
-# backend/database INALCANCAVEIS (so-MCP) — abre mao do egress allowlist SO p/ o omni/Baileys.
-# O resto da Etapa 6 (omni auth, criar instancia, PAREAR — 2 celulares) e interativo: RUNBOOK §6.
+# DIAGNOSTICO opcional (SPEC-030): o `make sandbox-up` ja cria a khal-wanet e poe sandbox+backend+
+# worker nela (a Omni roda no sandbox, aliased `omni`). Este alvo so CONFIRMA que o sandbox alcanca
+# o WSS do Baileys. ISOLAMENTO (SPEC-030): backend/database PASSAM a ser alcancaveis em L3 (mesma
+# khal-wanet) — o isolamento forte e o do AGENTE (tool-scoping), nao o de rede do container.
 sandbox-wanet:
 	@docker network create khal-wanet >/dev/null 2>&1 || true
 	@docker network connect khal-wanet khal-sandbox 2>/dev/null || true
-	@docker exec khal-sandbox sh -c 'curl -s -o /dev/null -w ">> web.whatsapp.com -> %{http_code} (espera 200/4xx = alcanca)\n" --noproxy "*" --max-time 8 https://web.whatsapp.com; \
-	  curl -s -o /dev/null -w ">> backend          -> %{http_code} (espera 000 = bloqueado)\n" --noproxy "*" --max-time 4 http://backend:8000/health; \
-	  curl -s -o /dev/null -w ">> database         -> %{http_code} (espera 000 = bloqueado)\n" --noproxy "*" --max-time 4 http://database:5432' || true
-	@echo ">> sandbox na khal-wanet. Proximo: make sandbox-pair PHONE=+<DDI><numero-do-bot>"
+	@docker exec khal-sandbox sh -c 'curl -s -o /dev/null -w ">> web.whatsapp.com -> %{http_code} (espera 200/4xx = WSS alcanca)\n" --noproxy "*" --max-time 8 https://web.whatsapp.com; \
+	  curl -s -o /dev/null -w ">> backend          -> %{http_code} (SPEC-030: alcancavel em L3; isolamento e por tool-scoping)\n" --noproxy "*" --max-time 4 http://backend:8000/health' || true
+	@echo ">> diagnostico ok. O wiring ja foi feito pelo make sandbox-up; siga p/ make sandbox-pair."
 
 # Etapas 6.1+6.2 (RUNBOOK): omni auth + cria/reusa a instancia + conecta + gera o PAIRING
 # CODE p/ o numero do bot (a unica acao fisica e digitar o codigo no celular do bot).

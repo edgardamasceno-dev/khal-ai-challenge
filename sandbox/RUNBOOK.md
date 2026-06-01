@@ -7,18 +7,22 @@ pareamento do WhatsApp) são suas e estão marcadas como tal.
 **Fluxo rápido (do zero ao E2E interno provado):**
 
 ```bash
-make sandbox-up       # 1. determinístico  — vendor + build + overlay isolado
+make sandbox-up       # 1. determinístico  — vendor + build + overlay + backend/worker wired ao Omni
 make sandbox-login    # 2. INTERATIVO (você) — claude login (device-flow, persiste no volume)
 make sandbox-serve    # 3+4. determinístico — wiring do agente + daemons (NATS/Omni/genie serve)
 make sandbox-smoke    # 5. determinístico  — self-test: prova NATS→bridge→agente→MCP (exit≠0 se falhar)
 # 6. WhatsApp real (precisa de 2 celulares: bot + cliente):
-make sandbox-wanet                          # 6.0 rede direta p/ o Baileys (Omni alcançável p/ o backend)
 make sandbox-pair PHONE=+<DDI><bot>         # 6.1+6.2 → você digita o código no celular do BOT
 make sandbox-connect                        # 6.3 liga a instância ao agente
 #   -> mande a msg do CLIENTE -> o LID resolve sozinho (SPEC-015/030) -> resposta no WhatsApp (6.5)
 make sandbox-media-on                       # 6.6 (opt-in) PDF da 2ª via como ANEXO (default = só link)
 #   Derrubar tudo: make sandbox-down
 ```
+
+> **SPEC-030**: o `make sandbox-up` já cria a `khal-wanet` e conecta `sandbox`+`backend`+`worker`
+> (a Omni API roda no sandbox, aliased `omni`). Então **não há passo de rede manual** (`sandbox-wanet`
+> virou diagnóstico opcional — §6.0) **nem de re-seed**: o LID resolve sozinho e o instance-id é
+> descoberto pelo nome (`luzdovale-bot`). `OMNI_API_KEY` fixo no `.env`; `OMNI_INSTANCE_ID` fica vazio.
 
 > `make sandbox-up` recria o container, mas o login (volume `claude-home`) e o pgdata do Genie
 > (R-05) **sobrevivem**; o `sandbox-serve` re-marca o onboarding do Claude automaticamente — então
@@ -44,18 +48,19 @@ make sandbox-up
 ```
 
 Equivale a vendorizar `sandbox/libs/` (`make sandbox-libs`) + `docker build` das 2 imagens +
-`docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate
-mcp-server egress-proxy sandbox`.
-Sobe: `database`, `backend`, `mcp-server` (em `mcpnet`), `egress-proxy`, `sandbox`.
+`docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --build --force-recreate
+mcp-server egress-proxy sandbox backend notifications-worker`.
+Sobe: `database`, `backend`, `mcp-server` (em `mcpnet`), `egress-proxy`, `sandbox` e
+`notifications-worker` (SPEC-030: `sandbox`+`backend`+`worker` também na `khal-wanet`).
 O `sandbox` fica em `sleep infinity` (operador dirige os passos abaixo). Derrubar: `make sandbox-down`.
 
-**Checagem de isolamento** (o sandbox só enxerga o MCP):
+**Checagem de rede** (o `mcp-server` é a via de tools do agente; pós-SPEC-030 o `backend` é
+alcançável em L3 pela `khal-wanet` — o isolamento forte é o do **agente** por tool-scoping):
 
 ```bash
 docker exec khal-sandbox sh -c '
   curl -s -o /dev/null -w "mcp-server -> %{http_code} (espera 406)\n"  http://mcp-server:8000/mcp
-  curl -s -o /dev/null -w "backend    -> %{http_code} (espera 000)\n" --max-time 4 http://backend:8000/health
-  curl -s -o /dev/null -w "database   -> %{http_code} (espera 000)\n" --max-time 4 http://database:5432'
+  curl -s -o /dev/null -w "backend    -> %{http_code} (SPEC-030: alcançável em L3; o AGENTE não o acessa fora do MCP — tool-scoping)\n" --max-time 4 http://backend:8000/health'
 ```
 
 ---
@@ -194,20 +199,18 @@ A entrega real ao WhatsApp é o passo 6.
 Dois números: **bot** (escaneia/parea, recebe e responde) e **cliente** (manda a
 mensagem; precisa estar no seed). São WhatsApp distintos — não dá pra ser o mesmo.
 
-### 6.0 Rede direta p/ o Baileys (WSS)
+### 6.0 Rede do Baileys (WSS) — já feita pelo `sandbox-up` (SPEC-030)
 
-O WebSocket do Baileys (`wss://web.whatsapp.com/ws/chat`) **não honra `HTTP_PROXY`**
-e o sandbox não tem internet direta (só `mcpnet`+`egressnet` internas). Conecte o
-sandbox a uma rede **não-interna** (mantém backend/database inalcançáveis = só-MCP;
-abre mão do allowlist de egress p/ o processo omni/Baileys):
+O WebSocket do Baileys (`wss://web.whatsapp.com/ws/chat`) **não honra `HTTP_PROXY`**, então o
+sandbox precisa de uma rede **não-interna**. **Desde a SPEC-030 isso é automático**: o
+`make sandbox-up` cria a `khal-wanet` e põe `sandbox`+`backend`+`worker` nela — a MESMA rede que
+o backend usa p/ alcançar a Omni API (resolução do LID + envio). Então **não rode nada aqui**.
 
-```bash
-make sandbox-wanet     # cria khal-wanet + conecta o sandbox + valida (WSS OK; backend/db 000)
-```
-
-Equivalente manual: `docker network create khal-wanet` + `docker network connect khal-wanet
-khal-sandbox` + os `curl --noproxy "*"` de validação (web.whatsapp.com alcança; backend/database
-seguem `000` = bloqueados).
+`make sandbox-wanet` continua como **diagnóstico opcional** (idempotente): confirma que o sandbox
+alcança `web.whatsapp.com`. **Atenção ao isolamento (SPEC-030):** o `backend` agora **é**
+alcançável em L3 pelo sandbox (compartilham a `khal-wanet`, pois a Omni roda dentro do sandbox) —
+o check antigo "backend→000" deixou de valer. O isolamento forte é o do **agente** (tool-scoping:
+só `mcp__luz-do-vale__*` + `Bash(omni:*)`; sem `curl`/`WebFetch`), não o de rede do container.
 
 ### 6.1 + 6.2 — Autentica + cria a instância + gera o pairing code
 
@@ -414,8 +417,11 @@ docker exec khal-sandbox sh -c 'echo "{\"hook_event_name\":\"PreToolUse\",\"tool
 
 ## Guardrails ativos nesta topologia
 
-- **Rede só-MCP:** o sandbox alcança o **negócio apenas via `mcp-server`**; sem rota
-  a `backend`/`database` (validado: → 000). Vale mesmo com a rede direta do passo 6.
+- **Tool-scoping (não rede):** o **agente** (Claude Code) alcança o **negócio apenas via
+  `mcp-server`** (+ `Bash(omni:*)`). Pós-SPEC-030 o `backend` **é** alcançável em L3 pela
+  `khal-wanet` (mesma rede do Omni, que roda dentro do sandbox), mas o agente **não** o acessa
+  fora do MCP (sem `WebFetch`/`WebSearch`/`Bash` livre). O isolamento forte é o do **agente**
+  por tool-scoping, **não** o de rede do container (ADR-0006). O `database` segue sem rota.
 - **Egress:** o agente (Claude Code) sai pelo `egress-proxy` allowlistado
   (Anthropic + WhatsApp). Com a `khal-wanet` (passo 6) o processo omni/Baileys ganha
   internet direta (WSS) — relaxa o allowlist p/ a infra, mas o **agente** segue contido

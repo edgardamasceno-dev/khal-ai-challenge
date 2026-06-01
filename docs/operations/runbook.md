@@ -75,18 +75,20 @@ make sandbox-up
 
 Encadeia: (1) `sandbox-libs` — vendoriza Omni/Genie em `sandbox/libs/` nos SHAs pinados
 (`genie@a407a2e2` / `omni@fe155b81`, clona so se faltar; nao-confiaveis, doc 07); (2) build de
-`khal-sandbox:base` (`docker build -f sandbox/Dockerfile -t khal-sandbox:base .`) e
-`khal-egress-proxy` (`docker build -t khal-egress-proxy sandbox/egress`); (3) `docker compose -f
-docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy
-sandbox`. Derrubar so o overlay: `make sandbox-down`.
+`khal-sandbox:base` e `khal-egress-proxy`; (3) cria a `khal-wanet` e `docker compose -f
+docker-compose.yml -f sandbox/compose.sandbox.yml up -d --build --force-recreate mcp-server
+egress-proxy sandbox backend notifications-worker` — **SPEC-030**: o `sandbox` (aliased `omni`),
+o `backend` e o `worker` entram na `khal-wanet`, com `--build` p/ pegar mudancas de `src/`. Assim
+o backend↔Omni ja sobe wired (resolucao do LID + envio PDF/proativo), sem passo de rede manual.
+Derrubar so o overlay: `make sandbox-down`.
 
-**Checagem de isolamento** (o sandbox so enxerga o MCP — guardrail de rede, ADR-0006/ADR-0017):
+**Checagem de rede** (o `mcp-server` e a via de tools; pos-SPEC-030 o `backend` e alcancavel em
+L3 pela `khal-wanet` — o isolamento forte e o do **agente** por tool-scoping, ADR-0006/ADR-0017):
 
 ```bash
 docker exec khal-sandbox sh -c '
   curl -s -o /dev/null -w "mcp-server -> %{http_code} (espera 406)\n" http://mcp-server:8000/mcp
-  curl -s -o /dev/null -w "backend    -> %{http_code} (espera 000)\n" --max-time 4 http://backend:8000/health
-  curl -s -o /dev/null -w "database   -> %{http_code} (espera 000)\n" --max-time 4 http://database:5432'
+  curl -s -o /dev/null -w "backend    -> %{http_code} (SPEC-030: alcancavel em L3; o AGENTE nao o acessa fora do MCP)\n" --max-time 4 http://backend:8000/health'
 ```
 
 Login + wiring + daemons + E2E (interno e WhatsApp real) seguem o **passo a passo interativo** de
@@ -102,9 +104,12 @@ docker exec -d khal-sandbox sh -c 'bash /srv/sandbox-up.sh > /tmp/up.log 2>&1'  
 > - Recriar o **mcp-server sem** o override `sandbox/compose.sandbox.yml` o tira da `mcpnet` →
 >   o agente perde **todas** as tools e responde "instabilidade tecnica". Sempre recrie com **ambos**
 >   os arquivos `-f`.
-> - Recriar o **backend** exige reconectar a rede externa `khal-wanet` (e ter as envs `OMNI_*` do
->   `.env`), senao o disparo de WhatsApp falha.
-> - Recriar o **sandbox** depois do `claude login` derruba a sessao TUI → refaca `claude login`.
+> - **SPEC-030**: o `make sandbox-up` cria a `khal-wanet` e poe `sandbox`/`backend`/`worker` nela
+>   (com `--build`), entao o backend↔Omni ja sobe wired — **sem reconexao manual**. `OMNI_API_KEY`
+>   fixo no `.env` (compartilhado) e `OMNI_INSTANCE_ID` vazio (o id e resolvido pelo nome
+>   `luzdovale-bot`). Se recriar o `backend` **sozinho**, use os dois `-f` p/ manter a `khal-wanet`.
+> - Recriar o **sandbox** depois do `claude login`: o login (volume) e o onboarding sobrevivem
+>   (o `sandbox-serve` re-marca onboarding+trust, SPEC-030) — **nao** precisa refazer o `claude login`.
 
 ---
 
@@ -178,8 +183,9 @@ sistema em `conversation_memory` (lido pelo agente via `get_account_events`).
 | `mcp %{http_code}` != 406 no host | gateway/mcp nao subiu | `docker compose ps`; `docker logs khal-mcp` |
 | Tool nova nao aparece pro agente | drift de allowlist | rode `tests/unit/test_tool_scope_parity.py`; garanta a tool nas 3 fontes (server, frontmatter, run.py) derivadas de `allowlist.py` |
 | 1o turno do chat "morto" / resposta duplicada | corrida do spawn a frio (cold-start) | ver §7; reenvie a 1a mensagem; dedup no bridge (M-06) |
-| WhatsApp nao egressa a resposta | instancia nao pareada **ou** `backend` sem `khal-wanet`/`OMNI_*` apos recriacao | parear (sandbox/RUNBOOK §6); reconectar `khal-wanet` + envs `OMNI_*` |
-| 2a via so vem por link, sem PDF anexo | midia em modo isolado (default) | `bash sandbox/enable-media.sh` (opt-in, ADR-0010); `disable-media.sh` restaura |
+| WhatsApp nao egressa a resposta | instancia nao pareada | parear (sandbox/RUNBOOK §6: `make sandbox-pair`/`sandbox-connect`) |
+| Cliente vira "nao identificado" (LID nao resolve) | `OMNI_API_KEY` vazio (401) ou backend fora da `khal-wanet` | `OMNI_API_KEY` fixo no `.env` + `make sandbox-up` (poe backend na rede); o instance resolve pelo nome (SPEC-030) |
+| Envio "so na memoria" / PDF anexo nao sai | `OMNI_INSTANCE_ID` nao resolve (Omni inacessivel) ou midia isolada | confirme `make sandbox-up` (wiring) e `make sandbox-media-on` (anexo, opt-in ADR-0010); o id e por nome (SPEC-030) |
 | `get_account_events` vazio para titular conhecido | memoria fragmentada por `chat_id` | backfill de `titular_id` (SPEC-027) idempotente; rode no boot/CI |
 | Tool retorna stacktrace cru | backend caiu sem degradacao | M-03: a tool deve devolver erro tipado amigavel `{"erro": ...}`; verifique o backend |
 | eval-gate "skipped" no CI | sem `ANTHROPIC_API_KEY` (ex.: fork) | esperado; o job `quality` ainda roda; rode os evals localmente |

@@ -35,9 +35,14 @@ Detalhe e trade-offs em `docs/adrs/` e no contexto `../docs/09-stack-khal-ai-cha
 ## Setup rapido
 
 ```bash
-cp .env.example .env   # ajuste SEED_PERSONAS (numeros de demo) e credenciais
+cp .env.example .env   # ajuste SEED_PERSONAS (numeros de demo); OMNI_API_KEY ja vem fixo
 make compose-up        # database + seed (one-shot) + backend + frontend + mcp-server + gateway
 ```
+
+> Para o agente atendendo no **WhatsApp** (Omni/Genie no sandbox), o fluxo completo do zero —
+> `make sandbox-up → sandbox-login → sandbox-serve → sandbox-smoke → sandbox-pair → sandbox-connect`
+> — esta no **`sandbox/RUNBOOK.md`** ("Fluxo rapido"). Tudo deterministico vira `make` target; o
+> LID resolve sozinho (SPEC-015/030, sem re-seed) e o instance-id e descoberto pelo nome.
 
 - **Personas via `SEED_PERSONAS`** (`.env`, SPEC-006): `"Nome:telefone;..."`, de 1 a ~100.
   O serviço `seed` (Python/SQLAlchemy, idempotente) materializa a massa; re-seed do zero:
@@ -104,12 +109,17 @@ runtime do agente e zona nao-confiavel (docs/07, ADR-0006). O passo a passo **in
 login/QR/E2E WhatsApp fica em `sandbox/RUNBOOK.md`.
 
 Adaptacoes de demo conhecidas (detalhe no runbook §6/§7):
-- **Recriar o `mcp-server` sempre com os dois `-f`** (`docker-compose.yml` +
-  `sandbox/compose.sandbox.yml`), senao ele sai da `mcpnet` e o agente perde as tools.
-- **Recriar o `backend`** exige reconectar a rede externa `khal-wanet` + envs `OMNI_*` (`.env`),
-  senao o disparo de WhatsApp falha.
+- **`make sandbox-up` faz o wiring** (SPEC-030): cria a `khal-wanet`, poe `sandbox`/`backend`/`worker`
+  nela (Omni aliased `omni`) e recria os 3 com `--build`. Logo **nao ha passo de rede manual nem
+  de re-seed**: o LID resolve sozinho (SPEC-015) e o instance-id e descoberto pelo nome
+  (`OMNI_INSTANCE_NAME=luzdovale-bot`; `OMNI_INSTANCE_ID` fica vazio). `OMNI_API_KEY` **fixo** no
+  `.env` (compartilhado backend↔Omni) — vazio quebra a resolucao/envio (401).
 - **Cold-start**: a 1a mensagem de um chat pode nao entrar na TUI — reenvie (mitigacoes no runbook §7).
-- **PDF anexo**: opt-in via `sandbox/enable-media.sh` (default = so o link, isolamento intacto).
+- **PDF anexo**: opt-in via `make sandbox-media-on` (default = so o link; o recreate do `sandbox-up`
+  reseta o opt-in, entao re-rode apos subir). Isolamento intacto no default (ADR-0010).
+- **Isolamento (SPEC-030)**: `backend`↔`sandbox` compartilham a `khal-wanet` (a Omni roda dentro do
+  sandbox) — a mesma rota do proativo (SPEC-009). O isolamento forte e o do **agente** (tool-scoping),
+  nao o de rede do container.
 
 ## Qualidade
 

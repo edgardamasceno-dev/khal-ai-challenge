@@ -71,7 +71,13 @@ make compose-up        # database + seed (one-shot) + backend + frontend + mcp-s
   `docs/specs/SPEC-025-consumption-insights.md`.
 - **Agente CX** em `agent/AGENTS.md` (+ `agent/mcp.config.json`) — papel, política e guardrails
   que orquestram as tools do `/mcp`. Avaliação ao vivo (dirige `claude -p`, sem key — ADR-0007):
-  `make agent-evals` (requer o stack no ar + Claude Code autenticado). Ver `docs/specs/SPEC-004-agent-cx.md`.
+  `make agent-evals` (roda via `uv run`). Pré-requisitos: (1) o stack no ar (`make compose-up`);
+  (2) **Claude Code autenticado** no host (`claude login`) **ou** `ANTHROPIC_API_KEY`; (3) o runner e
+  o seed do banco usando o **mesmo `SEED_PERSONAS`/`SEED_RANDOM_SEED`** — as jornadas são derivadas das
+  personas, então banco e eval precisam casar (ex.: `SEED_PERSONAS="Ana Souza:...;Carlos Lima:...;Joana Pereira:..." make agent-evals`).
+  O **Agent Score** (gate ≥ 85) e o histórico de passadas (criar → simular → iterar → re-simular) ficam em
+  **`docs/evals/agent-score-iteracoes.md`** (Passada 1: 75/100 → Passada 2: 88/100). Ver também
+  `docs/specs/SPEC-004-agent-cx.md` e `docs/operations/runbook.md`.
 
 Increments seguintes (WhatsApp via Omni/Genie no sandbox) seguem o rollout do ADR-0006.
 

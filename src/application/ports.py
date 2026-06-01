@@ -140,6 +140,25 @@ class OmniSender(Protocol):
 
 
 @runtime_checkable
+class PresencePort(Protocol):
+    """Sinais de presença do canal (Omni): "digitando"/typing e read receipt.
+
+    Porta segregada do `OmniSender` (ISP): só o runtime/bridge que reage a um
+    inbound precisa emitir presença, então quem só envia texto/documento não
+    carrega esses métodos. Best-effort (ADR-0018): Omni indisponível ou endpoint
+    ausente -> retorna False e segue; nunca bloqueia o turno do agente.
+    """
+
+    def enviar_presenca(self, chat_id: str, estado: str = "composing") -> bool:
+        """Publica o chat-state do agente: 'composing'|'paused'|'available'."""
+        ...
+
+    def marcar_lida(self, chat_id: str) -> bool:
+        """Marca as mensagens do chat como lidas (read receipt / markRead)."""
+        ...
+
+
+@runtime_checkable
 class ChannelHealthPort(Protocol):
     """Saúde do canal (Omni): WhatsApp e Agente. 'ok'|'down'|'unknown'."""
 
@@ -201,3 +220,28 @@ class AuditRecord:
     error_code: str | None = None
     trace_id: str | None = None
     chat_id: str | None = None
+
+
+# --- Summarize (R-15 / SPEC-028 / ADR-0019) --------------------------------
+# Resumo de thread no fechamento de ticket/handoff. O LLM fica ATRÁS desta porta
+# e é OPT-IN; o default é o fallback extrativo determinístico
+# (`src/domain/conversation/summarize.py`), que respeita "sem LLM no caminho
+# crítico". O serviço orquestrador (`ThreadSummaryService`) trata QUALQUER falha
+# do adapter caindo no fallback — o fechamento nunca bloqueia.
+
+
+class SummarizerError(Exception):
+    """Falha do adapter de resumo (timeout/empty/erro de API). Sinaliza ao
+    `ThreadSummaryService` para cair no fallback extrativo determinístico."""
+
+
+@runtime_checkable
+class SummarizerPort(Protocol):
+    """Resume uma lista de mensagens da conversa num texto curto.
+
+    Implementação default (sem rede): `resumo_extrativo` (domínio puro). O adapter
+    LLM (`AnthropicHaikuSummarizer`) é opt-in. Contrato: devolve um resumo
+    não-vazio OU levanta `SummarizerError` — jamais retorna string vazia
+    silenciosamente (assim o serviço sabe quando cair no fallback)."""
+
+    def summarize(self, mensagens: list[MensagemChat], *, max_chars: int = 600) -> str: ...

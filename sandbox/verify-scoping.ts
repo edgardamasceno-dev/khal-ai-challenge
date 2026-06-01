@@ -45,6 +45,27 @@ if (!cmd.includes('mcp__luz-do-vale__create_ticket')) fail.push('faltou MCP no a
 if (cmd.includes("--disallowedTools 'Bash'")) fail.push('Bash hard-disallow quebraria a resposta omni');
 if (!cmd.includes('Bash(omni:*)')) fail.push('faltou Bash(omni:*) no allow (resposta omni)');
 if (/"allow":\[[^\]]*"Bash"[,\]]/.test(cmd)) fail.push('Bash amplo (sem escopo) no allow');
+// Asserts dos HOOKS de guardrail (R-20) e do path de VOLUME do pgdata (R-05).
+// Verificação ESTÁTICA da config (não sobe o agente): garante que o settings.json
+// registra PreToolUse/UserPromptSubmit apontando p/ o guardrail.py, e que o
+// script existe. O disparo real é validação ao vivo (ver RUNBOOK §7).
+const HOOKS_SETTINGS = process.env.WIRE_HOOKS_SETTINGS ?? '/srv/agent/settings.json';
+const HOOK_SCRIPT = process.env.WIRE_HOOK_SCRIPT ?? '/srv/agent/hooks/guardrail.py';
+try {
+  const raw = readFileSync(HOOKS_SETTINGS, 'utf-8');
+  const settings: any = JSON.parse(raw);
+  const hooks = settings.hooks ?? {};
+  for (const ev of ['PreToolUse', 'UserPromptSubmit']) {
+    const arr = hooks[ev];
+    if (!Array.isArray(arr) || arr.length === 0) { fail.push(`settings.json sem hook ${ev}`); continue; }
+    const cmds = arr.flatMap((m: any) => (m.hooks ?? []).map((h: any) => h.command ?? ''));
+    if (!cmds.some((c: string) => c.includes('guardrail.py'))) fail.push(`hook ${ev} não chama guardrail.py`);
+  }
+} catch (e) {
+  fail.push(`settings.json de hooks ausente/inválido em ${HOOKS_SETTINGS} (${(e as Error).message})`);
+}
+try { readFileSync(HOOK_SCRIPT, 'utf-8'); } catch { fail.push(`script de hook ausente em ${HOOK_SCRIPT}`); }
+
 console.log('\n=== asserts ===');
 if (fail.length) { console.log('FALHOU:\n  ' + fail.join('\n  ')); process.exit(1); }
-console.log('OK: só MCP luz-do-vale + Bash(omni:*) p/ resposta; WebFetch/WebSearch/escrita/Task bloqueados; persona via system prompt.');
+console.log('OK: só MCP luz-do-vale + Bash(omni:*) p/ resposta; WebFetch/WebSearch/escrita/Task bloqueados; persona via system prompt; hooks PreToolUse/UserPromptSubmit (R-20) registrados.');

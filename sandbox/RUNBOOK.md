@@ -270,6 +270,95 @@ completa pela `bridge` (ver ADR-0010).
 
 ---
 
+## 7. Cold-start estrutural (R-05) e hooks de guardrail (R-20)
+
+Duas evoluções da sandbox, ambas **mínimas e reversíveis** — não alteram o fluxo
+dos passos 1–6 quando desabilitadas.
+
+### 7.1 R-05 — pgdata do Genie em volume nomeado (persistência do cold-start)
+
+O `compose.sandbox.yml` agora monta `GENIE_PGDATA=/home/node/.genie-pgdata` no
+**volume nomeado `genie-pgdata`**. O estado do postgres dedicado do Genie
+(sessões/bridge) sobrevive a `--force-recreate` — casado com o `--resume` do Genie,
+o **cold-start vira custo pago uma vez por chat na vida** (não a cada recriação).
+
+> **Ownership do volume (validação ao vivo):** um volume nomeado montado num path
+> que **não existia** na imagem nasce `root`-owned, e o `initdb` (non-root) falharia.
+> O `sandbox-up.sh` (bloco 0) **detecta isso e cai em FALLBACK** para o FS efêmero
+> com aviso — o sandbox **nunca quebra**, só não persiste. Para ativar a
+> persistência de fato, o mountpoint precisa ser `node`-gravável. Verifique:
+> ```bash
+> docker exec khal-sandbox sh -c 'ls -ld /home/node/.genie-pgdata && touch /home/node/.genie-pgdata/.w && echo gravável && rm /home/node/.genie-pgdata/.w'
+> ```
+> Se aparecer "gravável", o `initdb` persiste no volume. Se vier `Permission denied`,
+> o follow-up é pré-criar o dir `node`-owned no `Dockerfile` (como já se faz com
+> `~/.claude`), e então recriar a sandbox. **Reverter:** remova a env `GENIE_PGDATA`
+> e o volume `genie-pgdata` do `compose.sandbox.yml` (volta ao FS efêmero de antes).
+
+**Validar a persistência (ao vivo):** suba a stack, conecte um chat (passo 5/6),
+depois `up -d --force-recreate sandbox` e confirme que a sessão re-anexa via
+`--resume` (não refaz cold-start). A linha de sessão deve persistir:
+```bash
+docker exec khal-sandbox sh -c 'PGPASSWORD=postgres psql -h 127.0.0.1 -p 19642 -U postgres -d genie -tAc "select chat_id from genie_bridge_sessions limit 5"'
+```
+
+### 7.2 R-05 — warm-pool determinístico (opt-in) + heartbeat
+
+O `sandbox-up.sh` publica, **se** `WARM_POOL_PHONES` estiver setado, 1 `omni.message`
+sintética de aquecimento por telefone-âncora **após** o serve subir — o 1º turno
+real do cliente cai numa sessão já quente (mata a corrida do 1º spawn). **Default
+vazio = desligado** (comportamento idêntico ao de antes).
+
+Habilitar (telefones das personas-âncora do seu `.env`, espaço ou vírgula):
+```bash
+docker exec -d khal-sandbox sh -c 'WARM_POOL_PHONES="555199990001 555199990002 555199990003" bash /srv/sandbox-up.sh > /tmp/up.log 2>&1'
+docker exec khal-sandbox sh -c 'grep -i "warm-pool" /tmp/up.log'   # "aquecido <phone>"
+```
+
+**Heartbeat anti-nudge (validação ao vivo):** turnos longos (PDF/multi-tool) não
+podem morrer no nudge de 120s. Confirme o `agent-heartbeat` (~30s) nos logs do serve:
+```bash
+docker exec khal-sandbox sh -c 'grep -i "heartbeat" /tmp/up.log | tail'
+```
+
+**Invalidação de sessão por hash (R-05):** o `--resume` reanexa o pane; se a
+persona/tool-set mudou, a sessão antiga teria prompt obsoleto. O fingerprint
+determinístico `src/agent/session_hash.py::session_fingerprint` (persona +
+frontmatter + catálogo de tools na ordem canônica) é a base para invalidar
+(`clear-session`/`delete from genie_bridge_sessions`) quando o hash diverge.
+A função é **pura e testada offline** (`tests/unit/test_guardrail_hook.py`); o
+disparo no sandbox é validação ao vivo (o sandbox não monta `src/` Python).
+
+### 7.3 R-20 — hooks de guardrail determinístico do Claude Code
+
+4ª camada de guardrail, **no runtime do agente**, complementando tool-scoping +
+rede só-MCP + validação no MCP. O `genie-wire.sh` (passo 3) copia
+`sandbox/agent/settings.json` para `~/.claude/settings.json` (escopo user,
+volume `claude-home`), registrando dois hooks que chamam
+`/srv/agent/hooks/guardrail.py` (bind-mount read-only):
+
+- **PreToolUse** — bloqueia tool MCP fora da allowlist, `create_ticket` sem
+  `confirmar=true`, e telefone diferente do remetente do turno.
+- **UserPromptSubmit** — bloqueia prompt-injection óbvio no texto do cliente.
+
+A lógica é pura (`decidir(evento) -> (permitido, motivo)`), unit-testada em
+`tests/unit/test_guardrail_hook.py` (inclui smoke do script via stdin → exit
+0/2 e paridade da allowlist do hook com `src/interfaces/mcp/allowlist.py`).
+
+Verificar o registro (após o wiring):
+```bash
+docker exec khal-sandbox sh -c 'cat ~/.claude/settings.json | python3 -m json.tool | head'
+docker exec khal-sandbox sh -c 'echo "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"mcp__luz-do-vale__create_ticket\",\"tool_input\":{\"confirmar\":false}}" | python3 /srv/agent/hooks/guardrail.py; echo "exit=$?"'   # espera exit=2 + motivo no stderr
+```
+
+> **Validação ao vivo:** o *disparo* dos hooks pelo Claude Code depende de o spawn
+> do Genie repassar o settings de escopo user — confirme no E2E (passo 5/6) que um
+> `create_ticket` sem confirmação é barrado. **Reverter:** remova
+> `~/.claude/settings.json` (ou não copie no wiring) — desliga os hooks sem afetar
+> as demais camadas.
+
+---
+
 ## Guardrails ativos nesta topologia
 
 - **Rede só-MCP:** o sandbox alcança o **negócio apenas via `mcp-server`**; sem rota
@@ -283,3 +372,7 @@ completa pela `bridge` (ver ADR-0010).
 - **Acesso só ao titular:** resolvido pelo telefone do remetente (no MCP/persona),
   não contornável por injection.
 - **Confirmação antes de escrever** (`create_ticket`) + idempotência — no MCP.
+- **Hooks de guardrail (R-20):** 4ª camada no runtime do agente (PreToolUse +
+  UserPromptSubmit) — barra tool fora da allowlist, escrita sem confirmação,
+  telefone ≠ remetente e prompt-injection óbvio. Determinístico, no código
+  (`sandbox/agent/hooks/guardrail.py`), testado offline; ver §7.3.

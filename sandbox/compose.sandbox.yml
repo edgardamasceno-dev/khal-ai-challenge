@@ -48,13 +48,28 @@ services:
       NO_PROXY: mcp-server,localhost,127.0.0.1,mmg.whatsapp.net,.cdn.whatsapp.net,.fna.whatsapp.net
       # MCP interno (mcpnet) consumido pelo agente CX via Claude Code.
       MCP_URL: http://mcp-server:8000/mcp
+      # R-05 (cold-start estrutural): pgdata do Genie num caminho dedicado, montado
+      # em VOLUME NOMEADO (abaixo), p/ sobreviver a `--force-recreate`. Fica FORA de
+      # ~/.genie p/ não cobrir o config.json (setupComplete) gravado no build.
+      # Reversível: sem o volume + esta env, o sandbox-up.sh cai no default legado.
+      GENIE_PGDATA: /home/node/.genie-pgdata
     volumes:
       # Persona da entrega (fonte única do AGENTS.md do agente CX), só leitura.
       - ./agent:/srv/agent-src:ro
+      # R-20: hooks de guardrail determinístico + settings do Claude Code (escopo
+      # user), só leitura. O genie-wire.sh copia o settings.json p/ ~/.claude.
+      # (paths relativos ao docker-compose.yml base, na raiz da entrega).
+      - ./sandbox/agent/hooks:/srv/agent/hooks:ro
+      - ./sandbox/agent/settings.json:/srv/agent/settings.json:ro
       # Login do Claude Code + config MCP (escopo user), persistido e NÃO versionado (ADR-0007).
       - claude-home:/home/node/.claude
+      # R-05: pgdata do Genie persistente entre recriações do container (cold-start
+      # pago uma vez por chat na vida, casado com o --resume do Genie).
+      - genie-pgdata:/home/node/.genie-pgdata
     depends_on:
       - egress-proxy
 
 volumes:
   claude-home:
+  # R-05: estado do postgres dedicado do Genie (sessões/bridge), nomeado e durável.
+  genie-pgdata:

@@ -65,6 +65,23 @@ Resultado: **24 jornadas, 23 PASS / 1 FAIL**. **Score 88 → 96 (+8).** As 3 jor
 
 ---
 
+## Passada 4 (iteração) — 2026-06-01 — **100/100** 🎯🏁
+
+Mudança (commit `71a844e`): **monta a precondição de J10b no harness** — a lição recorrente de J13/J16/J10b aplicada. `seed_pagamento_confirmado(phone)` faz `PUT /conversations/{phone}/memory` semeando `proativo.pagamento.confirmado` (mesmo shape do worker) **só** para J10b, **sem mutar a fatura** (não usa `/proactive/events`, então J1/J9 não regridem); `Scenario.setup` é executado pelo runner **antes** do `claude -p` (falha de setup = FAIL, nunca passa por engano). A assertion `assert_nao_reabre` foi **ancorada em tool-call** (`not wrote_ticket()` **e** `called(get_account_events)`) com reconhecimento leniente — robusta à variância de wording. Isolamento provado em teste (todos os demais cenários `setup=None`). Suíte: 486 unit/api, 35 integration, ruff/mypy verdes.
+
+Resultado: **24 jornadas, 24 PASS / 0 FAIL — 100/100.** J10b ✅ (`setup: ok` → o agente respondeu *"seu pagamento está confirmado no sistema"* → `ticket=False eventos=True reconheceu=True`).
+
+### Comparativo do ciclo
+
+| Passada | Score | PASS/FAIL | Tipo de dívida fechada |
+|---|---|---|---|
+| 1 | 75 | 18/6 | (baseline) |
+| 2 | 88 ✅ | 21/3 | prompt (intenção→tool) + roteamento (haiku na abertura) |
+| 3 | 96 ✅ | 23/1 | prompt (recusa cruzada) + test-design (erro determinístico) |
+| 4 | **100** 🏁 | **24/0** | test-design (precondição de memória) + assertion robusta |
+
+---
+
 ## Conclusões
 
 1. **O ciclo funciona e é o diferencial.** Uma iteração de prompt/router barata (4 arquivos, zero código de negócio) moveu o Agent Score de **75 → 88** e cruzou o gate. É a alça "iterar contexto/modelo → re-simular → comparar score" das vagas, exercida de verdade.
@@ -75,9 +92,14 @@ Resultado: **24 jornadas, 23 PASS / 1 FAIL**. **Score 88 → 96 (+8).** As 3 jor
 
 ---
 
-## Passada 4 (a planejar)
+## Fechamento do ciclo
 
-Único alvo: **J10b** — montar a **precondição** que ele afirma medir (seguindo a lição de J13/J16). Opções:
-- **(recomendado) Setup proativo no harness:** antes de J10b, disparar um evento `pagamento.confirmado` para a persona via `POST /proactive/events` (ou seed direto na `conversation_memory`), de modo que `get_account_events` retorne o evento e o agente tenha o que reconhecer. Determinístico, roda no CI.
-- **Alternativa:** re-escopar J10b para uma asserção independente de evento na memória (ex.: vendo a fatura **vencida**, o agente oferece a 2ª via/forma de pagamento sem reabrir chamado).
-- **Meta:** **96 → 100/100** sustentado (24/24), com a asserção ancorada em tool-call e não em wording.
+**4 passadas, 75 → 88 → 96 → 100**, cada delta rastreável a uma dívida nomeada — nenhuma mudança em código de negócio (só `AGENTS.md`, `model_router.py` e o harness de eval). O ciclo "criar → simular → Agent Score → iterar → re-simular → comparar" das vagas FDE, exercido de ponta a ponta com números reais.
+
+**Lições para a próxima jornada nova:**
+1. **Toda jornada monta o estado que afirma medir** — sem precondição, ela passa por sorte de wording e falha sob variância (J13/J16/J10b foram a mesma classe de dívida).
+2. **Ancorar asserções em tool-call, não em palavras-chave** — tool-calls são estáveis run-a-run; o wording do LLM varia.
+3. **Separar a dívida certa para a ferramenta certa** — prompt (AGENTS.md), roteamento (router), test-design (harness) e guardrail (código) são consertados em lugares diferentes.
+4. **Os guardrails determinísticos seguraram em todas as passadas** — mesmo sob regressão de prompt, o acesso a dado alheio nunca vazou (a defesa está no código, não no prompt; docs/09).
+
+> Para sustentar o 100 em mudanças futuras: o eval ao vivo (`make agent-evals`) é o gate; ele já está no CI (job `eval-gate`, hoje desabilitado por depender de `ANTHROPIC_API_KEY` + stack — reativável com o segredo).

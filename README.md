@@ -76,7 +76,7 @@ make compose-up        # database + seed (one-shot) + backend + frontend + mcp-s
   o seed do banco usando o **mesmo `SEED_PERSONAS`/`SEED_RANDOM_SEED`** — as jornadas são derivadas das
   personas, então banco e eval precisam casar (ex.: `SEED_PERSONAS="Ana Souza:...;Carlos Lima:...;Joana Pereira:..." make agent-evals`).
   O **Agent Score** (gate ≥ 85) e o histórico de passadas (criar → simular → iterar → re-simular) ficam em
-  **`docs/evals/agent-score-iteracoes.md`** (Passadas 1→2→3: **75 → 88 → 96/100**). Ver também
+  **`docs/evals/agent-score-iteracoes.md`** (Passadas 1→2→3→4: **75 → 88 → 96 → 100/100**). Ver também
   `docs/specs/SPEC-004-agent-cx.md` e `docs/operations/runbook.md`.
 
 Increments seguintes (WhatsApp via Omni/Genie no sandbox) seguem o rollout do ADR-0006.

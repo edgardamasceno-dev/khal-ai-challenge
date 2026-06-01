@@ -25,13 +25,16 @@ class TestTabelaRoteamento:
             ("Vou abrir uma reclamação formal", Modelo.OPUS),
             ("Vou acionar o Procon e meu advogado", Modelo.OPUS),
             ("Quero cancelar meu contrato", Modelo.OPUS),
-            # HAIKU — saudação / FAQ curta de KB (barato, alto volume).
-            ("Oi, bom dia!", Modelo.HAIKU),
-            ("Olá", Modelo.HAIKU),
+            # HAIKU — FAQ PURA de KB (verbete sem contexto de conta).
             ("Qual o prazo de religação?", Modelo.HAIKU),
             ("O que é bandeira tarifária?", Modelo.HAIKU),
             ("Como faço para transferir a titularidade?", Modelo.HAIKU),
-            # SONNET — transacional (default seguro).
+            # SONNET — transacional E abertura/saudação (default seguro).
+            # Saudação/abertura agora vai para SONNET: o 1º turno aciona o fan-out
+            # de abertura (find_customer + get_account_events) e o tier barato pula
+            # as tool-calls (FAILs J10/J11 da Passada 1 do Agent Score).
+            ("Oi, bom dia!", Modelo.SONNET),
+            ("Olá", Modelo.SONNET),
             ("Preciso da segunda via da minha fatura", Modelo.SONNET),
             ("Qual o valor e o vencimento da minha conta?", Modelo.SONNET),
             ("Estou sem luz aqui no bairro, o que houve?", Modelo.SONNET),
@@ -60,10 +63,19 @@ class TestPrioridadeEDefault:
         # Sem token de KB/disputa nem transacional → não subdimensiona: sonnet.
         assert rotear_modelo("xyzzy frobnicate quux") == Modelo.SONNET
 
-    def test_msg_curta_sem_sinal_so_e_haiku_no_primeiro_turno(self) -> None:
-        # "tudo bem?" curto: haiku só na abertura; fora do 1º turno, default sonnet.
-        assert rotear_modelo("tudo bem?", primeiro_turno=True) == Modelo.HAIKU
+    def test_saudacao_abertura_vai_para_sonnet(self) -> None:
+        # Abertura/saudação NÃO vai mais para haiku (FAILs J10/J11 da Passada 1):
+        # o 1º turno aciona o fan-out de abertura, e o tier barato pula as tool-calls.
+        # Default seguro = sonnet, independente do turno.
+        assert rotear_modelo("Oi, bom dia!", primeiro_turno=True) == Modelo.SONNET
+        assert rotear_modelo("Oi, bom dia!", primeiro_turno=False) == Modelo.SONNET
+        assert rotear_modelo("tudo bem?", primeiro_turno=True) == Modelo.SONNET
         assert rotear_modelo("tudo bem?", primeiro_turno=False) == Modelo.SONNET
+
+    def test_faq_kb_pura_vai_para_haiku(self) -> None:
+        # FAQ de verbete (sem contexto de conta) continua no tier barato.
+        assert rotear_modelo("Qual o prazo de religação?") == Modelo.HAIKU
+        assert rotear_modelo("O que é bandeira tarifária?") == Modelo.HAIKU
 
 
 class TestEstabilidade:

@@ -3,9 +3,17 @@
 Heurística **pura** (sem I/O, sem hop de LLM) que mapeia a mensagem do cliente em
 um tier de modelo, materializando a política do ADR-0014:
 
-- ``SONNET`` = default seguro (transacional: fatura, outage, ticket, 2ª via);
-- ``HAIKU`` = saudação / FAQ curta de KB (barato, alto volume);
+- ``SONNET`` = default seguro (transacional **e abertura/saudação**: fatura,
+  outage, ticket, 2ª via, e o **fan-out de abertura** que lê a conta);
+- ``HAIKU`` = **FAQ pura de KB** (verbete sem contexto de conta: bandeira, prazo,
+  SLA, religação, titularidade) — barato, alto volume;
 - ``OPUS`` = ambíguo / disputa / handoff (raro, alto valor).
+
+A saudação/abertura (ex.: "oi", "bom dia") **deixa de ir para HAIKU**: o 1º turno
+dispara o fan-out de abertura (``find_customer_by_phone`` + ``get_account_events``
++ ``get_invoice_status``/``get_outage_by_region``), e o tier barato tende a
+conversar e **pular as tool-calls**. Abertura com contexto de conta → ``SONNET``
+(ADR-0014, ajuste pós-eval Passada 1). ``HAIKU`` fica restrito a FAQ de KB pura.
 
 A normalização reusa o ``tokenize`` do retrieval léxico (strip-accents + lower +
 stopwords), então "Não concordo!", "nao concordo" e "NÃO CONCORDO" caem no mesmo
@@ -39,13 +47,14 @@ _OPUS_TOKENS: frozenset[str] = frozenset(
     }
 )
 
-#: Saudação / FAQ curta de KB → HAIKU (barato, alto volume).
-#: Inclui termos de verbete da ``kb/`` (bandeira, prazo, sla, religacao,
-#: titularidade) e aberturas curtas ("oi", "ola", "bom dia").
+#: **FAQ pura de KB** → HAIKU (barato, alto volume). Apenas termos de **verbete**
+#: da ``kb/`` (bandeira, prazo, sla, religacao, titularidade) — conhecimento geral
+#: que NÃO depende de ler a conta do cliente.
+#: Saudação/abertura ("oi", "ola", "bom dia") foi DELIBERADAMENTE removida daqui:
+#: o 1º turno aciona o fan-out de abertura (find_customer + get_account_events), e o
+#: tier barato pula as tool-calls (FAILs J10/J11 da Passada 1). Abertura → SONNET.
 _HAIKU_TOKENS: frozenset[str] = frozenset(
     {
-        "oi", "ola", "opa", "bom", "boa", "dia", "tarde", "noite",
-        "obrigado", "obrigada", "valeu", "tchau",
         "prazo", "prazos", "sla", "bandeira", "bandeiras", "tarifa", "tarifaria",
         "titularidade", "transferir", "religacao", "religar",
     }
@@ -66,11 +75,6 @@ _SONNET_TOKENS: frozenset[str] = frozenset(
     }
 )
 
-#: Mensagem muito curta (≤ N tokens) sem sinal transacional tende a ser
-#: saudação/abertura → favorece HAIKU.
-_CURTO_MAX_TOKENS = 3
-
-
 class Modelo(StrEnum):
     """Tier de modelo escolhido por caso (ADR-0014, pilar 3)."""
 
@@ -84,14 +88,18 @@ def rotear_modelo(mensagem: str, *, primeiro_turno: bool = False) -> Modelo:
 
     Política (prioridade OPUS > HAIKU > SONNET):
     1. Qualquer sinal de **disputa/handoff/jurídico** → ``OPUS``.
-    2. **Saudação/FAQ curta** (token de KB/abertura) **sem** sinal transacional
-       → ``HAIKU``. Mensagem muito curta (≤3 tokens) sem sinal transacional no
-       primeiro turno também cai em ``HAIKU`` (ex.: "oi, bom dia").
-    3. Caso contrário → ``SONNET`` (default seguro, transacional).
+    2. **FAQ pura de KB** (token de verbete da ``kb/``) **sem** sinal transacional
+       → ``HAIKU`` (ex.: "qual o prazo de religação?", "o que é bandeira tarifária?").
+    3. Caso contrário → ``SONNET`` (default seguro): transacional **e também
+       saudação/abertura** ("oi", "bom dia"), porque o 1º turno aciona o fan-out de
+       abertura (find_customer + get_account_events) e o tier barato pula as
+       tool-calls. O parâmetro ``primeiro_turno`` é mantido por compatibilidade de
+       assinatura, mas não muda mais a decisão (abertura não vai para HAIKU).
 
     O default é ``SONNET`` mesmo para entrada vazia/sem tokens: o piso seguro
-    nunca subdimensiona um caso transacional.
+    nunca subdimensiona um caso transacional nem uma abertura.
     """
+    del primeiro_turno  # não influencia mais a decisão (abertura → SONNET, não HAIKU).
     tokens = set(tokenize(mensagem))
 
     # 1) OPUS vence: disputa/handoff/jurídico é alto valor e não pode cair no tier barato.
@@ -100,15 +108,11 @@ def rotear_modelo(mensagem: str, *, primeiro_turno: bool = False) -> Modelo:
 
     transacional = bool(tokens & _SONNET_TOKENS)
 
-    # 2) HAIKU: saudação/FAQ curta SEM sinal transacional.
-    if not transacional:
-        if tokens & _HAIKU_TOKENS:
-            return Modelo.HAIKU
-        # Abertura curta sem nenhum sinal forte ("oi" sozinho, "tudo bem?").
-        if primeiro_turno and 0 < len(tokens) <= _CURTO_MAX_TOKENS:
-            return Modelo.HAIKU
+    # 2) HAIKU: FAQ pura de KB SEM sinal transacional (verbete sem contexto de conta).
+    if not transacional and (tokens & _HAIKU_TOKENS):
+        return Modelo.HAIKU
 
-    # 3) Default seguro.
+    # 3) Default seguro: transacional, abertura/saudação e desconhecido.
     return Modelo.SONNET
 
 

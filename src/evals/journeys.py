@@ -419,7 +419,10 @@ def build_scenarios(
                 Scenario(
                     f"J11-boas-vindas[{ph}]", ph, "Oi, bom dia!",
                     make_welcome(persona.nome),
-                    expected_model="haiku",  # saudação curta → tier barato (R-09)
+                    # Saudação de abertura → SONNET, não HAIKU (FAIL J11 da Passada 1):
+                    # o 1º turno aciona o fan-out de abertura (find_customer +
+                    # get_account_events) e o tier barato pulava as tool-calls.
+                    expected_model="sonnet",
                 )
             )
         # J12 (M-02): pedido ambiguo — so p/ personas multi-UC (Carlos), onde
@@ -490,6 +493,9 @@ def build_scenarios(
         # get_account_events).
         Scenario(
             "J10-eventos-conta", p, "Oi, e sobre aquilo de ontem.", assert_eventos_conta,
+            # Abertura com contexto de conta → SONNET, não HAIKU (FAIL J10 da
+            # Passada 1): o tier barato pulava get_account_events na abertura.
+            expected_model="sonnet",
         ),
         # J10b (R-03, variante forte): com `pagamento.confirmado` nos eventos, NAO
         # reabre chamado/2a via e reconhece o pagamento. DEPENDE de seed de memoria

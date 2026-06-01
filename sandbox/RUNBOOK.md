@@ -12,12 +12,10 @@ make sandbox-login    # 2. INTERATIVO (você) — claude login (device-flow, per
 make sandbox-serve    # 3+4. determinístico — wiring do agente + daemons (NATS/Omni/genie serve)
 make sandbox-smoke    # 5. determinístico  — self-test: prova NATS→bridge→agente→MCP (exit≠0 se falhar)
 # 6. WhatsApp real (precisa de 2 celulares: bot + cliente):
-make sandbox-wanet                          # 6.0 rede direta p/ o Baileys (negócio segue bloqueado)
+make sandbox-wanet                          # 6.0 rede direta p/ o Baileys (Omni alcançável p/ o backend)
 make sandbox-pair PHONE=+<DDI><bot>         # 6.1+6.2 → você digita o código no celular do BOT
 make sandbox-connect                        # 6.3 liga a instância ao agente
-#   -> mande 1 msg do celular CLIENTE p/ o bot
-make sandbox-reseed                         # 6.4 auto-detecta o LID e re-chaveia a persona
-#   -> mande a msg real do CLIENTE -> resposta chega no WhatsApp (6.5)
+#   -> mande a msg do CLIENTE -> o LID resolve sozinho (SPEC-015/030) -> resposta no WhatsApp (6.5)
 make sandbox-media-on                       # 6.6 (opt-in) PDF da 2ª via como ANEXO (default = só link)
 #   Derrubar tudo: make sandbox-down
 ```
@@ -236,19 +234,27 @@ make sandbox-connect
 Resolve o instance-ID pelo nome e roda `omni connect <id> luz-do-vale` (com as envs
 force-TCP do postgres do genie). Pré-req: você já pareou o código (status `connected`).
 
-### 6.4 — LID: re-chaveia o cliente pelo identificador que o WhatsApp envia
+### 6.4 — LID: resolução automática (SPEC-015 + SPEC-030, sem reseed)
 
-O WhatsApp manda um **LID** (`<dígitos>@lid`), **não** o telefone E.164 — então
-`find_customer_by_phone` (casa por dígitos do telefone) não acha o cliente. Mande **uma**
-mensagem do celular cliente para o bot e rode:
+O WhatsApp manda um **LID** (`<dígitos>@lid`), **não** o telefone E.164. Isso é resolvido
+**automaticamente**: o backend chama `resolve_canonical` no Omni (`GET /api/v2/chats`:
+`externalId <lid>@lid` ↔ `canonicalId <msisdn>@s.whatsapp.net`) e acha o titular pelas
+variantes de nono dígito (**SPEC-015**). Para isso disparar, o **wiring backend↔Omni**
+(SPEC-030) precisa estar de pé — e já está, pelo `make sandbox-up`:
 
-```bash
-make sandbox-reseed        # auto-detecta o LID do log e re-chaveia a persona do .env
-#  override explícito:  make sandbox-reseed LID=<digitos>
-```
+- `OMNI_API_KEY` **fixo** (`.env`) compartilhado entre backend e a Omni API do sandbox
+  (sem ele, a key efêmera do Omni dá 401 e a resolução cai);
+- o `sandbox` aliased como **`omni`** na `khal-wanet`, e `backend`/`worker` na mesma rede.
 
-> Adaptação de demo. O ideal — resolver **LID→telefone** no Omni (`chat_id_mappings`)
-> — fica como follow-up para usar o número E.164 real.
+Então **não há passo de re-seed**: mande a mensagem do cliente e o agente já reconhece o
+titular. (Se o backend não estiver wired, a resolução cai e o cliente vira "não identificado"
+— cheque `OMNI_API_KEY` no `.env` e se backend/worker estão na `khal-wanet`.)
+
+> Trade-off de isolamento (SPEC-030/ADR-0006): `backend`/`worker` compartilham a `khal-wanet`
+> com o `sandbox` (a Omni API roda **dentro** do container do sandbox), então a rota L3
+> backend↔sandbox existe — **a mesma** que o proativo (SPEC-009) já exige. O **agente** segue
+> isolado por **tool-scoping** (só `mcp__luz-do-vale__*` + `Bash(omni:*)`; sem `curl`/`WebFetch`):
+> ele **não** alcança o negócio fora do MCP. O isolamento forte é o do agente, não o de rede do container.
 
 ### 6.5 Teste e observe
 

@@ -40,16 +40,19 @@ class HttpxOmniChats:
         self._timeout = timeout
 
     def _fetch_chats(self) -> list[dict[str, Any]]:
+        # Com instance_id, filtra por instância (produção multi-instância). Sem ele
+        # (OMNI_INSTANCE_ID vazio), busca em TODAS as instâncias — o instance-id é
+        # dinâmico por pareamento no demo, então não exigi-lo evita um valor a alinhar
+        # (SPEC-030). A resolução segue determinística: casa pelo externalId do LID.
+        params = {"instanceId": self._instance_id} if self._instance_id else {}
         with httpx.Client(headers=self._headers, timeout=self._timeout) as client:
-            r = client.get(
-                f"{self._base}/api/v2/chats", params={"instanceId": self._instance_id}
-            )
+            r = client.get(f"{self._base}/api/v2/chats", params=params)
             r.raise_for_status()
             items: list[dict[str, Any]] = r.json().get("items", [])
             return items
 
     def resolve_canonical(self, external_id: str) -> str | None:
-        if not self._instance_id or not external_id:
+        if not external_id:
             return None
         alvo = normalizar_msisdn(external_id)
         try:

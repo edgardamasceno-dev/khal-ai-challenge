@@ -1,4 +1,4 @@
-.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-wanet sandbox-pair sandbox-connect sandbox-reseed sandbox-media-on sandbox-media-off sandbox-down agent-evals
+.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-wanet sandbox-pair sandbox-connect sandbox-media-on sandbox-media-off sandbox-down agent-evals
 
 # SHAs pinados dos repos NAO-confiaveis (docs/07) que o Dockerfile do sandbox copia.
 GENIE_PIN := a407a2e2
@@ -50,8 +50,10 @@ sandbox-libs:
 sandbox-up: sandbox-libs
 	docker build -f sandbox/Dockerfile -t khal-sandbox:base .
 	docker build -t khal-egress-proxy sandbox/egress
-	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy sandbox
-	@echo ">> sandbox no ar (isolado). Fluxo: make sandbox-login -> make sandbox-serve -> make sandbox-smoke (ver sandbox/RUNBOOK.md)"
+	@docker network create khal-wanet >/dev/null 2>&1 || true
+	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy sandbox backend notifications-worker
+	@echo ">> sandbox no ar; backend/worker wired ao Omni (khal-wanet) p/ resolução LID + proativo (SPEC-030)."
+	@echo ">> Fluxo: make sandbox-login -> make sandbox-serve -> make sandbox-smoke (ver sandbox/RUNBOOK.md)"
 
 # Etapa 2 (RUNBOOK): login INTERATIVO do Claude Code dentro do sandbox (device-flow,
 # persiste no volume claude-home — ADR-0007). Rode no SEU terminal. Idempotente.
@@ -95,11 +97,6 @@ sandbox-pair:
 # Etapa 6.3 (RUNBOOK): liga a instancia pareada ao agente luz-do-vale (omni connect).
 sandbox-connect:
 	@bash sandbox/connect.sh
-
-# Etapa 6.4 (RUNBOOK, adaptacao de demo): re-chaveia a persona do .env pelo LID que o
-# WhatsApp manda (auto-detecta do log; override: make sandbox-reseed LID=<digitos>).
-sandbox-reseed:
-	@bash sandbox/reseed.sh "$(LID)"
 
 # Etapa 6.6 (RUNBOOK): OPT-IN do anexo de PDF (SPEC-019/ADR-0010). Conecta a rede `bridge`
 # (saida NAT) p/ o upload do Baileys aos CDNs de midia — o link presigned e localhost (so

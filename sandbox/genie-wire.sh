@@ -17,6 +17,12 @@ log() { printf '\033[1;35m[genie-wire]\033[0m %s\n' "$*"; }
 WS="${GENIE_WORKSPACE:-/srv/omni}"
 AGENT_NAME=luz-do-vale
 AGENT_DIR="$WS/agents/$AGENT_NAME"
+# O bloco permissions.allow deste frontmatter é DERIVADO da fonte única
+# src/interfaces/mcp/allowlist.py (permissions_allow()) e guardado no CI pelo
+# teste tests/unit/test_tool_scope_parity.py. NÃO edite a allowlist à mão aqui
+# no sandbox: ajuste a allowlist Python, regenere/valide e só então ele chega
+# escopado. O sandbox não tem o src/ Python montado, por isso a paridade é
+# garantida antes do build, não em runtime de wiring.
 FRONTMATTER="${WIRE_FRONTMATTER:-/srv/agent/$AGENT_NAME.frontmatter.yaml}"
 PERSONA_SRC="${WIRE_PERSONA:-/srv/agent-src/AGENTS.md}"   # bind-mount de implementation/agent
 MCP_URL="${MCP_URL:-http://mcp-server:8000/mcp}"

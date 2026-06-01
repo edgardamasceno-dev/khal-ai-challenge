@@ -41,9 +41,58 @@ def test_cobre_jornadas_comportamentais_fixas() -> None:
     fixos = (
         "J3a-pede-confirmacao", "J3b-confirmado", "J6a-injection",
         "J7-handoff", "J8-base-conhecimento",
+        # Casos comportamentais fixos na persona primaria (R-03 / M-02 / ADR-0013).
+        "J10-eventos-conta", "J10b-eventos-nao-reabre", "J13-tool-erro",
+        "J14-transcricao-historico",
     )
     for fixo in fixos:
         assert fixo in nomes
+
+
+def test_j9_pdf_gerado_para_persona_com_fatura() -> None:
+    # Ana (canonica): fatura vencida -> J9 (2a via do PDF) data-driven. R-02.
+    personas = carregar_personas("Ana Souza:555199990001", 42)
+    ana = next(perfil for p, perfil in personas if p.nome == "Ana Souza")
+    assert ana.cenario_fatura in ("uma_aberta", "uma_vencida")
+    scs = build_scenarios(personas)
+    assert any(s.name.startswith("J9-segunda-via-pdf[555199990001]") for s in scs)
+
+
+def test_j9_pdf_nao_gerado_para_persona_em_dia() -> None:
+    # Carlos (canonico): fatura em dia -> sem J9 (espelha o data-driven de J1/J2).
+    personas = carregar_personas("Carlos Lima:555199990002", 42)
+    carlos = next(perfil for p, perfil in personas if p.nome == "Carlos Lima")
+    assert carlos.cenario_fatura == "em_dia"
+    scs = build_scenarios(personas)
+    assert not any(s.name.startswith("J9-segunda-via-pdf[") for s in scs)
+
+
+def test_j11_boas_vindas_para_persona_com_outage() -> None:
+    # Ana (canonica): outage ativa -> J11 (boas-vindas no 1o turno). R-11.
+    personas = carregar_personas("Ana Souza:555199990001", 42)
+    scs = build_scenarios(personas)
+    j11 = next(s for s in scs if s.name.startswith("J11-boas-vindas[555199990001]"))
+    assert j11.phone == "555199990001"
+
+
+def test_j12_ambiguo_so_para_multi_uc() -> None:
+    # Carlos (canonico): comercial multi-UC (n_ucs>=2) -> J12 (pedido ambiguo). M-02.
+    personas = carregar_personas("Carlos Lima:555199990002", 42)
+    carlos = next(perfil for p, perfil in personas if p.nome == "Carlos Lima")
+    assert carlos.n_ucs >= 2
+    scs = build_scenarios(personas)
+    assert any(s.name.startswith("J12-ambiguo[555199990002]") for s in scs)
+
+
+def test_j12_ambiguo_ausente_para_uc_unica() -> None:
+    # Joana (canonica): rural, tende a 1 UC -> sem J12 quando n_ucs == 1.
+    personas = carregar_personas("Joana Pereira:555199990003", 42)
+    joana = next(perfil for p, perfil in personas if p.nome == "Joana Pereira")
+    scs = build_scenarios(personas)
+    if joana.n_ucs == 1:
+        assert not any(s.name.startswith("J12-ambiguo[") for s in scs)
+    else:  # pragma: no cover - guarda p/ derivacao futura
+        assert any(s.name.startswith("J12-ambiguo[") for s in scs)
 
 
 # Default do .env.example: as 3 canônicas com nome completo.

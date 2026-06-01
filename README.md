@@ -1,5 +1,7 @@
 # khal-ai-challenge
 
+[![CI](https://github.com/edgardamasceno-dev/khal-ai-challenge/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/edgardamasceno-dev/khal-ai-challenge/actions/workflows/ci.yml)
+
 Agente conversacional de CX para uma **distribuidora de energia** ficticia, atendendo no **WhatsApp**. O canal e o **Omni** (Baileys), a orquestracao e o **Genie** (Claude Code), e as ferramentas de negocio sao expostas por um **MCP server em Python**.
 
 > Status: scaffolding. O comportamento de produto e entregue por SPEC, com TDD, conforme `docs/specs/` e o fluxo de engenharia do contexto.
@@ -72,6 +74,25 @@ make test-unit          # dominio + use cases + API (repositorios fake)
 make test-integration   # repositorios contra Postgres (DATABASE_URL)
 make check              # ruff + mypy + suite completa
 ```
+
+### Integracao continua (GitHub Actions)
+
+`/.github/workflows/ci.yml` roda em `push`/`pull_request` para `develop` e nas branches de
+entrega. Dois jobs:
+
+- **`quality`** (sempre, inclusive em forks sem segredo): sobe um Postgres de servico, aplica
+  o schema e executa `uv sync` -> `ruff` -> `mypy` -> `pytest` (unit/api/integration). Inclui o
+  teste de **paridade da allowlist** (impede o drift do PDF/contexto entre server, frontmatter
+  e evals).
+- **`eval-gate`** (condicional ao segredo `ANTHROPIC_API_KEY`): dirige o agente headless contra
+  o `/mcp` e calcula um **score 0-100** (`round(100 * PASS / TOTAL)`); o **gate >= 85** reprova
+  o merge. Sem o segredo (ex.: PR de fork) o job e **pulado** (skip), nao falha. Limiar
+  configuravel por `EVAL_GATE_MIN` (default 85).
+
+A tool de memoria `get_conversation_context` (read-only, ADR-0005) deixa o agente ler o
+historico canonico do titular no abrir da conversa (jornada concierge: boas-vindas proativo +
+recuperacao empatica de cliente nao identificado, AGENTS.md). Ver `docs/specs/SPEC-022-conversation-context.md`
+e `docs/specs/SPEC-023-journey-resilience.md`.
 
 ## Mapa de documentos
 

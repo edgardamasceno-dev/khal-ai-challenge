@@ -1,0 +1,171 @@
+# CI/CD publico da Luz do Vale (R-01 do docs/11-roadmap-melhorias-agente.md).
+#
+# Dois jobs:
+#   quality   -> SEMPRE roda (inclusive em forks sem segredo): ruff + mypy + pytest
+#                (unit/api/integration) contra um Postgres service com o schema aplicado.
+#                Inclui o teste de paridade da allowlist (R-02) que bloqueia drift do PDF.
+#   eval-gate -> CONDICIONAL a secrets.ANTHROPIC_API_KEY: roda o agente headless contra o
+#                /mcp e reprova o merge se o score < EVAL_GATE_MIN (default 85). Sem segredo
+#                (ex.: PR de fork) o job e PULADO (skip), nao falha -> "roda quando ha
+#                segredo de auth, senao skip".
+#
+# Seguranca (docs/07): nada de `| bash`, nada de install-global de omni/genie no runner;
+# telemetria off (OMNI_TELEMETRY=false, SENTRY_DSN= vazio); unica credencial e o
+# ANTHROPIC_API_KEY scoped do secret. Actions PINADAS por SHA (cadeia de suprimentos).
+
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - "feature/**"
+  pull_request:
+    branches:
+      - develop
+
+# Cancela runs antigos do mesmo ref (PR/branch) assim que um novo push chega.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Telemetria off em todo o pipeline (docs/07).
+  OMNI_TELEMETRY: "false"
+  SENTRY_DSN: ""
+
+jobs:
+  quality:
+    name: Lint, types e testes
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Alinhado ao docker-compose.yml (postgres:18) e ao db/init/01-schema.sql.
+        image: postgres:18
+        env:
+          POSTGRES_USER: khal
+          POSTGRES_PASSWORD: khal_local_dev
+          POSTGRES_DB: khal_test
+        ports:
+          - 5432:5432
+        # Espera o Postgres aceitar conexoes antes dos steps usarem o service.
+        options: >-
+          --health-cmd "pg_isready -U khal -d khal_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Usado pelos testes de integracao (mesma string do desafio/README).
+      DATABASE_URL: "postgresql+psycopg://khal:khal_local_dev@localhost:5432/khal_test"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Instala uv (Python 3.12)
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          # Versao de Python do projeto (pyproject: requires-python >=3.12).
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Instala dependencias (dev)
+        run: uv sync --dev
+
+      - name: Cliente psql (para aplicar o schema no service)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Aplica o schema no Postgres de teste
+        env:
+          PGPASSWORD: khal_local_dev
+        run: |
+          psql -h localhost -p 5432 -U khal -d khal_test \
+            -v ON_ERROR_STOP=1 -f db/init/01-schema.sql
+
+      - name: Ruff (lint)
+        run: uv run ruff check .
+
+      - name: Mypy (strict)
+        run: uv run mypy src
+
+      - name: Testes unit + api (inclui paridade da allowlist, R-02)
+        # Os 6 testes do renderer dependem do WeasyPrint (libs nativas do SO) e ficam
+        # fora do gate de CI por serem dependentes de ambiente; cobertos localmente.
+        run: |
+          uv run pytest tests/unit tests/api -q \
+            --ignore=tests/unit/test_invoice_renderer.py
+
+      - name: Testes de integracao (Postgres service)
+        run: uv run pytest tests/integration -q
+
+  eval-gate:
+    name: Eval gate (>= 85)
+    needs: quality
+    runs-on: ubuntu-latest
+    # So roda quando ha segredo de auth do agente; em PR de fork / sem secret -> SKIP.
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.fork == false }}
+
+    steps:
+      - name: Verifica disponibilidade do segredo
+        id: guard
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=eval-gate pulado::Sem ANTHROPIC_API_KEY (ex.: PR de fork). Eval gate ignorado; o job 'quality' ja cobre lint/types/testes."
+          else
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.guard.outputs.has_key == 'true'
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Instala uv (Python 3.12)
+        if: steps.guard.outputs.has_key == 'true'
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Instala dependencias (dev)
+        if: steps.guard.outputs.has_key == 'true'
+        run: uv sync --dev
+
+      - name: Sobe o stack minimo para o /mcp
+        if: steps.guard.outputs.has_key == 'true'
+        env:
+          OMNI_TELEMETRY: "false"
+          SENTRY_DSN: ""
+        run: |
+          docker compose up -d --build database seed minio backend mcp-server gateway
+          # Da tempo do backend/mcp ficarem saudaveis antes dos evals.
+          docker compose ps
+
+      - name: Eval gate (reprova merge se score < 85)
+        if: steps.guard.outputs.has_key == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Gate bloqueante: run.py agrega PASS/total*100 e faz exit 1 abaixo do minimo.
+          EVAL_GATE_MIN: "85"
+          OMNI_TELEMETRY: "false"
+          SENTRY_DSN: ""
+        run: uv run python -m src.evals.run
+
+      - name: Logs do stack em caso de falha
+        if: ${{ failure() && steps.guard.outputs.has_key == 'true' }}
+        run: docker compose logs --no-color --tail 200
+
+      - name: Derruba o stack
+        if: ${{ always() && steps.guard.outputs.has_key == 'true' }}
+        run: docker compose down -v

@@ -1,4 +1,4 @@
-.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-wanet sandbox-pair sandbox-connect sandbox-reseed sandbox-down agent-evals
+.PHONY: setup lint typecheck test test-unit test-integration check api compose-up compose-down sandbox-libs sandbox-up sandbox-login sandbox-serve sandbox-smoke sandbox-wanet sandbox-pair sandbox-connect sandbox-media-on sandbox-media-off sandbox-down agent-evals
 
 # SHAs pinados dos repos NAO-confiaveis (docs/07) que o Dockerfile do sandbox copia.
 GENIE_PIN := a407a2e2
@@ -50,8 +50,10 @@ sandbox-libs:
 sandbox-up: sandbox-libs
 	docker build -f sandbox/Dockerfile -t khal-sandbox:base .
 	docker build -t khal-egress-proxy sandbox/egress
-	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --force-recreate mcp-server egress-proxy sandbox
-	@echo ">> sandbox no ar (isolado). Fluxo: make sandbox-login -> make sandbox-serve -> make sandbox-smoke (ver sandbox/RUNBOOK.md)"
+	@docker network create khal-wanet >/dev/null 2>&1 || true
+	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml up -d --build --force-recreate mcp-server egress-proxy sandbox backend notifications-worker
+	@echo ">> sandbox no ar; backend/worker wired ao Omni (khal-wanet) p/ resolução LID + proativo (SPEC-030)."
+	@echo ">> Fluxo: make sandbox-login -> make sandbox-serve -> make sandbox-smoke (ver sandbox/RUNBOOK.md)"
 
 # Etapa 2 (RUNBOOK): login INTERATIVO do Claude Code dentro do sandbox (device-flow,
 # persiste no volume claude-home — ADR-0007). Rode no SEU terminal. Idempotente.
@@ -74,17 +76,16 @@ sandbox-serve:
 sandbox-smoke:
 	bash sandbox/smoke.sh
 
-# Etapa 6.0 (RUNBOOK): a PARTE DETERMINISTICA do E2E WhatsApp real. Conecta o sandbox a uma
-# rede NAO-interna (khal-wanet) p/ o WSS direto do Baileys (que nao honra HTTP_PROXY). Mantem
-# backend/database INALCANCAVEIS (so-MCP) — abre mao do egress allowlist SO p/ o omni/Baileys.
-# O resto da Etapa 6 (omni auth, criar instancia, PAREAR — 2 celulares) e interativo: RUNBOOK §6.
+# DIAGNOSTICO opcional (SPEC-030): o `make sandbox-up` ja cria a khal-wanet e poe sandbox+backend+
+# worker nela (a Omni roda no sandbox, aliased `omni`). Este alvo so CONFIRMA que o sandbox alcanca
+# o WSS do Baileys. ISOLAMENTO (SPEC-030): backend/database PASSAM a ser alcancaveis em L3 (mesma
+# khal-wanet) — o isolamento forte e o do AGENTE (tool-scoping), nao o de rede do container.
 sandbox-wanet:
 	@docker network create khal-wanet >/dev/null 2>&1 || true
 	@docker network connect khal-wanet khal-sandbox 2>/dev/null || true
-	@docker exec khal-sandbox sh -c 'curl -s -o /dev/null -w ">> web.whatsapp.com -> %{http_code} (espera 200/4xx = alcanca)\n" --noproxy "*" --max-time 8 https://web.whatsapp.com; \
-	  curl -s -o /dev/null -w ">> backend          -> %{http_code} (espera 000 = bloqueado)\n" --noproxy "*" --max-time 4 http://backend:8000/health; \
-	  curl -s -o /dev/null -w ">> database         -> %{http_code} (espera 000 = bloqueado)\n" --noproxy "*" --max-time 4 http://database:5432' || true
-	@echo ">> sandbox na khal-wanet. Proximo: make sandbox-pair PHONE=+<DDI><numero-do-bot>"
+	@docker exec khal-sandbox sh -c 'curl -s -o /dev/null -w ">> web.whatsapp.com -> %{http_code} (espera 200/4xx = WSS alcanca)\n" --noproxy "*" --max-time 8 https://web.whatsapp.com; \
+	  curl -s -o /dev/null -w ">> backend          -> %{http_code} (SPEC-030: alcancavel em L3; isolamento e por tool-scoping)\n" --noproxy "*" --max-time 4 http://backend:8000/health' || true
+	@echo ">> diagnostico ok. O wiring ja foi feito pelo make sandbox-up; siga p/ make sandbox-pair."
 
 # Etapas 6.1+6.2 (RUNBOOK): omni auth + cria/reusa a instancia + conecta + gera o PAIRING
 # CODE p/ o numero do bot (a unica acao fisica e digitar o codigo no celular do bot).
@@ -96,10 +97,14 @@ sandbox-pair:
 sandbox-connect:
 	@bash sandbox/connect.sh
 
-# Etapa 6.4 (RUNBOOK, adaptacao de demo): re-chaveia a persona do .env pelo LID que o
-# WhatsApp manda (auto-detecta do log; override: make sandbox-reseed LID=<digitos>).
-sandbox-reseed:
-	@bash sandbox/reseed.sh "$(LID)"
+# Etapa 6.6 (RUNBOOK): OPT-IN do anexo de PDF (SPEC-019/ADR-0010). Conecta a rede `bridge`
+# (saida NAT) p/ o upload do Baileys aos CDNs de midia — o link presigned e localhost (so
+# alcancavel local/WhatsApp Web), entao o ANEXO e o caminho de entrega no demo. Default =
+# isolado (so o link). sandbox-media-off restaura o isolamento.
+sandbox-media-on:
+	@bash sandbox/enable-media.sh
+sandbox-media-off:
+	@bash sandbox/disable-media.sh
 
 sandbox-down:
 	docker compose -f docker-compose.yml -f sandbox/compose.sandbox.yml down

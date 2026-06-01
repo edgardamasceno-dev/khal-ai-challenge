@@ -17,6 +17,8 @@ import logging
 
 import httpx
 
+from src.infrastructure.events.omni_instances import resolve_instance_id
+
 logger = logging.getLogger("proactive.omni")
 
 # Presença é um sinal de UX, não de entrega: timeout bem mais curto que o texto;
@@ -30,16 +32,30 @@ class HttpxOmniSender:
         base_url: str,
         api_key: str = "",
         instance_id: str = "",
+        instance_name: str = "",
         timeout: float = 8.0,
         media_timeout: float = 12.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._instance_id = instance_id
+        self._instance_name = instance_name  # SPEC-030: resolve o id por nome se vazio
         self._headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self._timeout = timeout
         self._media_timeout = media_timeout  # anexo é best-effort; não trava o agente
         self._transport = transport  # injetável só em teste (httpx.MockTransport)
+
+    def _eid(self) -> str:
+        """Instance-id efetivo: o fixo (OMNI_INSTANCE_ID) ou resolvido pelo nome (SPEC-030).
+        Lazy + cacheado: a 1ª resolução bem-sucedida fica em ``self._instance_id``."""
+        if not self._instance_id and self._instance_name:
+            self._instance_id = (
+                resolve_instance_id(
+                    self._base, self._headers, self._instance_name, transport=self._transport
+                )
+                or ""
+            )
+        return self._instance_id
 
     def _client(self, timeout: float) -> httpx.Client:
         """Cria o client REST (headers + timeout). O `transport` injetado permite
@@ -66,7 +82,7 @@ class HttpxOmniSender:
         return None
 
     def send_text(self, chat_id: str, texto: str) -> bool:
-        if not self._instance_id:
+        if not self._eid():
             logger.warning("OMNI_INSTANCE_ID ausente; notificação só na memória.")
             return False
         try:
@@ -95,7 +111,7 @@ class HttpxOmniSender:
         não bloqueia o atendimento; o link no texto é o canal confiável. base64 (não
         URL) porque o Omni não alcança o MinIO local.
         """
-        if not self._instance_id:
+        if not self._eid():
             return False
         try:
             with self._client(self._media_timeout) as client:
@@ -132,7 +148,7 @@ class HttpxOmniSender:
         `send_text` (onWhatsApp). Best-effort com timeout curto: presença é UX, nunca
         bloqueia o turno — Omni off / endpoint ausente -> False.
         """
-        if not self._instance_id:
+        if not self._eid():
             return False
         try:
             with self._client(_PRESENCE_TIMEOUT) as client:
@@ -160,7 +176,7 @@ class HttpxOmniSender:
         `readMessages`). Resolve o JID igual ao `send_text`. Best-effort com timeout
         curto: o tique azul é cosmético, nunca bloqueia o atendimento.
         """
-        if not self._instance_id:
+        if not self._eid():
             return False
         try:
             with self._client(_PRESENCE_TIMEOUT) as client:

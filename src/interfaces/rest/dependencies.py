@@ -58,7 +58,12 @@ def get_knowledge_retrieval() -> KnowledgeRetrievalPort:
 def get_health_service() -> HealthService:
     # Checa o Omni do sandbox (WhatsApp + Agente). Sem wiring -> 'unknown' (SPEC-014).
     return HealthService(
-        HttpxOmniHealth(settings.omni_url, settings.omni_api_key, settings.omni_instance_id)
+        HttpxOmniHealth(
+            settings.omni_url,
+            settings.omni_api_key,
+            settings.omni_instance_id,
+            settings.omni_instance_name,
+        )
     )
 
 
@@ -74,7 +79,10 @@ def get_session() -> Iterator[Session]:
 def _chat_directory() -> HttpxOmniChats:
     # Resolve LID -> telefone, controle (pausar/retomar) e transcript (SPEC-015/016/018).
     return HttpxOmniChats(
-        settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+        settings.omni_url,
+        settings.omni_api_key,
+        settings.omni_instance_id,
+        settings.omni_instance_name,
     )
 
 
@@ -84,7 +92,10 @@ def get_operator_chat_service() -> OperatorChatService:
         transcript=chats,
         control=chats,
         sender=HttpxOmniSender(
-            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+            settings.omni_url,
+            settings.omni_api_key,
+            settings.omni_instance_id,
+            settings.omni_instance_name,
         ),
     )
 
@@ -122,7 +133,10 @@ def get_invoice_document_service(
         renderer=WeasyPrintInvoiceRenderer(),
         storage=_object_storage(),
         sender=HttpxOmniSender(
-            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+            settings.omni_url,
+            settings.omni_api_key,
+            settings.omni_instance_id,
+            settings.omni_instance_name,
         ),
     )
 
@@ -140,7 +154,10 @@ def get_ticketing_service(session: Session = Depends(get_session)) -> TicketingS
         control=_chat_directory(),  # pausa/retoma a IA no Omni (SPEC-016)
         directory=_chat_directory(),  # normaliza o remetente p/ casar com a aba Chat
         sender=HttpxOmniSender(  # notifica o titular ao abrir/resolver (SPEC-020)
-            settings.omni_url, settings.omni_api_key, settings.omni_instance_id
+            settings.omni_url,
+            settings.omni_api_key,
+            settings.omni_instance_id,
+            settings.omni_instance_name,
         ),
     )
 
@@ -152,7 +169,12 @@ def get_memory_service(session: Session = Depends(get_session)) -> MemoryService
 def get_proactive_service(session: Session = Depends(get_session)) -> ProactiveService:
     return ProactiveService(
         NatsEventBus(settings.nats_url),
-        HttpxOmniSender(settings.omni_url, settings.omni_api_key, settings.omni_instance_id),
+        HttpxOmniSender(
+            settings.omni_url,
+            settings.omni_api_key,
+            settings.omni_instance_id,
+            settings.omni_instance_name,
+        ),
         SqlMemoriaRepository(session),
         SqlTitularRepository(session),
         SqlFaturaRepository(session),

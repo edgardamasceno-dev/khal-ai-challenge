@@ -86,8 +86,17 @@ class TestHttpxOmniChats:
         h = _chats(lambda: [{"externalId": "111@lid", "canonicalId": "55@s.whatsapp.net"}])
         assert h.resolve_canonical("87866608713902@lid") is None
 
-    def test_sem_instancia_none(self) -> None:
-        assert HttpxOmniChats("http://omni", instance_id="").resolve_canonical("x@lid") is None
+    def test_sem_instancia_resolve_entre_todas(self) -> None:
+        # SPEC-030: sem OMNI_INSTANCE_ID (vazio), resolve entre TODAS as instâncias —
+        # o instance-id é dinâmico por pareamento no demo, então não é exigido.
+        h = HttpxOmniChats("http://omni", instance_id="")
+        h._fetch_chats = lambda: [  # type: ignore[assignment,method-assign]
+            {"externalId": "87866608713902@lid", "canonicalId": "558193112159@s.whatsapp.net"},
+        ]
+        assert h.resolve_canonical("87866608713902@lid") == "558193112159"
+
+    def test_external_id_vazio_none(self) -> None:
+        assert HttpxOmniChats("http://omni", instance_id="i1").resolve_canonical("") is None
 
     def test_omni_inacessivel_none(self) -> None:
         def boom() -> list[dict]:  # type: ignore[type-arg]

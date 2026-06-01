@@ -24,6 +24,7 @@ docker exec "$SB" sh -c "cd /srv/omni && \
 
 cat <<EOF
 >> instância ligada ao agente '$AGENT'.
-   Agora mande UMA mensagem do celular CLIENTE (ex.: "oi") para o bot e rode:
-     make sandbox-reseed        (auto-detecta o seu LID e re-chaveia a persona)
+   Pronto: mande a mensagem do celular CLIENTE para o bot. O LID resolve sozinho
+   (SPEC-015/030 — backend↔Omni wired pelo sandbox-up) e o agente reconhece o titular.
+   Sem passo de reseed.
 EOF

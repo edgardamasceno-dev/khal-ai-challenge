@@ -37,8 +37,12 @@ logger = logging.getLogger("proactive.worker")
 
 def _evento(data: dict[str, Any]) -> EventoCX:
     return EventoCX(
-        tipo=data["tipo"], subtipo=data["subtipo"], telefone=data["telefone"],
-        nome=data["nome"], idempotency_key=data["idempotency_key"], dados=data.get("dados", {}),
+        tipo=data["tipo"],
+        subtipo=data["subtipo"],
+        telefone=data["telefone"],
+        nome=data["nome"],
+        idempotency_key=data["idempotency_key"],
+        dados=data.get("dados", {}),
     )
 
 
@@ -49,9 +53,16 @@ async def _handle(msg: object) -> None:
     try:
         svc = ProactiveService(
             NatsEventBus(settings.nats_url),
-            HttpxOmniSender(settings.omni_url, settings.omni_api_key, settings.omni_instance_id),
-            SqlMemoriaRepository(session), SqlTitularRepository(session),
-            SqlFaturaRepository(session), SqlInterrupcaoRepository(session),
+            HttpxOmniSender(
+                settings.omni_url,
+                settings.omni_api_key,
+                settings.omni_instance_id,
+                settings.omni_instance_name,
+            ),
+            SqlMemoriaRepository(session),
+            SqlTitularRepository(session),
+            SqlFaturaRepository(session),
+            SqlInterrupcaoRepository(session),
             SqlAlchemyUnitOfWork(session),
         )
         res = svc.processar(evento)

@@ -155,9 +155,17 @@ if [ -f "$CLAUDE_HOME/.credentials.json" ] && command -v node >/dev/null 2>&1; t
     let changed=false;
     if (d.hasCompletedOnboarding!==true){ d.hasCompletedOnboarding=true; changed=true; }
     if (!d.theme){ d.theme="dark"; changed=true; }
+    // Pre-aceita o "trust dialog" (Is this a project you trust?) das pastas do agente
+    // (SPEC-030): o spawn do Genie roda em /srv/omni/agents/luz-do-vale e, num ~/.claude.json
+    // resetado pelo recreate, o 1o turno TRAVA na pergunta de trust (nao ha humano p/ responder).
+    d.projects = d.projects || {};
+    for (const dir of ["/srv/omni","/srv/omni/agents/luz-do-vale"]) {
+      const pr = d.projects[dir] = d.projects[dir] || {};
+      if (pr.hasTrustDialogAccepted!==true){ pr.hasTrustDialogAccepted=true; changed=true; }
+    }
     if (changed) fs.writeFileSync(p, JSON.stringify(d));
-    process.stdout.write("hasCompletedOnboarding="+d.hasCompletedOnboarding+(changed?" (ajustado)":" (ja ok)"));
-  ' 2>/dev/null | sed 's/^/[sandbox-up] claude onboarding: /'; echo
+    process.stdout.write("onboarding="+d.hasCompletedOnboarding+" trust="+Object.keys(d.projects).length+"dirs"+(changed?" (ajustado)":" (ja ok)"));
+  ' 2>/dev/null | sed 's/^/[sandbox-up] claude onboarding+trust: /'; echo
 else
   log "claude: sem credencial em $CLAUDE_HOME — faça claude login (RUNBOOK Etapa 2); onboarding não tocado"
 fi

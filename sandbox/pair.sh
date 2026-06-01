@@ -16,9 +16,12 @@ case "$PHONE" in +[0-9]*) ;; *) echo "PHONE deve começar com + e DDI (ex.: +164
 
 om() { docker exec "$SB" sh -c "cd /srv/omni && $*"; }
 
-# 1. omni auth — a key é efêmera (pgserve do omni reinicia a cada serve); pega do log.
-KEY=$(docker exec "$SB" sh -lc 'grep -ohE "omni_sk_[A-Za-z0-9]+" /tmp/omni-api.log /tmp/up.log 2>/dev/null | head -1')
-[ -n "$KEY" ] || { echo "não achei 'omni_sk_' no log do Omni — o Omni API subiu? (make sandbox-serve)" >&2; exit 1; }
+# 1. omni auth — SPEC-030: a key é FIXA no .env (compartilhada com o backend). Usa ela;
+# fallback p/ o log só se .env não tiver (compat com setups antigos de key efêmera).
+KEY="${OMNI_API_KEY:-}"
+[ -n "$KEY" ] || KEY=$(sed -n 's/^OMNI_API_KEY=//p' .env 2>/dev/null | head -1 | tr -d '"'"'"'[:space:]')
+[ -n "$KEY" ] || KEY=$(docker exec "$SB" sh -lc 'grep -ohE "omni_sk_[A-Za-z0-9]+" /tmp/omni-api.log /tmp/up.log 2>/dev/null | head -1')
+[ -n "$KEY" ] || { echo "sem OMNI_API_KEY no .env nem 'omni_sk_' no log — defina OMNI_API_KEY no .env (SPEC-030)." >&2; exit 1; }
 om "omni auth login --api-key $KEY" >/dev/null 2>&1 && echo ">> omni auth OK"
 
 # 2. cria ou reusa a instância luzdovale-bot.

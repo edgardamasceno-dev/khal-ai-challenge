@@ -79,10 +79,19 @@ def get_invoice_status(phone: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def generate_invoice_pdf(phone: str, presigned: bool = False) -> dict[str, Any]:
-    """Gera o PDF (segunda via) da fatura atual do titular e devolve a URL. Use
-    presigned=true para um link com expiracao. O PDF e enviado por midia (ADR-0003)."""
-    return _tools.generate_invoice_pdf(phone, presigned)
+def generate_invoice_pdf(
+    phone: str,
+    presigned: bool = False,
+    mes_referencia: str | None = None,
+    numero_uc: str | None = None,
+) -> dict[str, Any]:
+    """Gera/envia o PDF (segunda via) de uma fatura do titular (PDF por midia, ADR-0003).
+
+    Sem mes_referencia/numero_uc: a fatura atual (mais recente em aberto, senao a mais recente).
+    Passe `mes_referencia` ('AAAA-MM') p/ uma fatura especifica, QUALQUER status (paga/vencida/em
+    aberto, SPEC-031); e `numero_uc` p/ mirar a UC em multi-UC. Se a competencia existir em mais
+    de uma unidade sem numero_uc, devolve `precisa_unidade` + as UCs. presigned=true -> link."""
+    return _tools.generate_invoice_pdf(phone, presigned, mes_referencia, numero_uc)
 
 
 @mcp.tool()

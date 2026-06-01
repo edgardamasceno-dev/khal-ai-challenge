@@ -43,6 +43,7 @@ class _HeaderLookup(Protocol):
 
     def get(self, key: str, /) -> str | None: ...
 
+
 #: Header canonico de trace que o bridge/Genie deve repassar na chamada /mcp.
 HEADER = "x-trace-id"
 #: Fallbacks aceitos quando o header canonico esta ausente (ordem de preferencia).

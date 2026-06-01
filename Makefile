@@ -111,5 +111,10 @@ sandbox-down:
 
 # Eval ao vivo do agente: dirige `claude -p` (sem key, ADR-0007) contra o /mcp.
 # Requer o stack no ar (make compose-up) e o Claude Code autenticado.
+# Carrega o .env (SEED_PERSONAS/SEED_RANDOM_SEED) p/ o runner CASAR com o seed do banco:
+# o runner lê do AMBIENTE (os.environ), NAO do .env — sem isto cai nas 3 personas canonicas
+# default e as jornadas falham contra um banco seedado com outras personas. (O `. ./.env`
+# sobrescreve o ambiente, entao o .env vence; p/ um override pontual edite o .env ou rode o
+# `uv run python -m src.evals.run` com o SEED_PERSONAS que quiser.)
 agent-evals:
-	uv run python -m src.evals.run
+	@set -a; [ -f .env ] && . ./.env; set +a; uv run python -m src.evals.run
